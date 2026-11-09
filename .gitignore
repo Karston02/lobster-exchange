@@ -15,3 +15,6 @@ dist/
 
 # macOS
 .DS_Store
+
+# AI helpers
+CLAUDE.md
