@@ -1,0 +1,10 @@
+# Workspace root. A "workspace" groups several Rust packages ("crates")
+# that share one build folder and one lockfile. We start with just the
+# engine and add crates (replay, python bindings, server) as we go.
+[workspace]
+resolver = "2"
+members = ["crates/engine"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"

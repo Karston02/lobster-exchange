@@ -1,0 +1,8 @@
+[package]
+name = "lobster-engine"
+version = "0.1.0"
+description = "A price-time priority limit order book matching engine"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
