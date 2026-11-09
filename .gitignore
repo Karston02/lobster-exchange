@@ -1,0 +1,17 @@
+# rust build output
+/target
+
+# recorded market data
+/data/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# node / dashboard
+node_modules/
+dist/
+
+# macOS
+.DS_Store
