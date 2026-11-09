@@ -16,5 +16,7 @@ dist/
 # macOS
 .DS_Store
 
-# AI helpers
+
+# just for me
 CLAUDE.md
+NOTES.md
