@@ -19,6 +19,9 @@ struct Stats {
     lines: u64,
     unparsed_lines: u64,
     l2_messages: u64,
+    trade_messages: u64,
+    /// Trades in `update` events (the opening snapshot of recent trades is skipped)
+    trades: u64,
     snapshots: u64,
     snapshot_levels: u64,
     updates: u64,
@@ -71,8 +74,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         last_sequence = Some(sequence);
 
-        let Message::L2Data(data) = recorded.msg else {
-            continue;
+        let data = match recorded.msg {
+            Message::L2Data(data) => data,
+            Message::MarketTrades(trades) => {
+                stats.trade_messages += 1;
+                stats.trades += trades
+                    .events
+                    .iter()
+                    .filter(|event| event.kind == EventKind::Update)
+                    .map(|event| event.trades.len() as u64)
+                    .sum::<u64>();
+                continue;
+            }
+            Message::Heartbeats(_) | Message::Subscriptions(_) => continue,
         };
         stats.l2_messages += 1;
 
@@ -128,6 +142,10 @@ fn report(path: &str, stats: &Stats, book: &L2Book, elapsed_secs: f64) {
     println!(
         "  l2 messages:     {} ({} snapshots, {} levels in snapshots)",
         stats.l2_messages, stats.snapshots, stats.snapshot_levels
+    );
+    println!(
+        "  trades:          {} in {} messages",
+        stats.trades, stats.trade_messages
     );
     println!(
         "  level changes:   {changes} ({} set, {} removed), {:.0}/s",

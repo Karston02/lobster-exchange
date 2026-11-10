@@ -1,4 +1,5 @@
-//! Records Coinbase's live level2 (order book) feed to disk, exactly as received.
+//! Records Coinbase's live level2 (order book) and market_trades feeds to disk,
+//! exactly as received.
 //!
 //! Usage, from the repo root:
 //!
@@ -110,6 +111,8 @@ async fn record_session(
     };
     let subscriptions = [
         json!({ "type": "subscribe", "product_ids": [product], "channel": "level2" }),
+        // Actual trades, so the replayer can tell a fill apart from a cancel
+        json!({ "type": "subscribe", "product_ids": [product], "channel": "market_trades" }),
         // Without heartbeats, Coinbase closes quiet connections after 60-90 seconds
         json!({ "type": "subscribe", "channel": "heartbeats" }),
     ];

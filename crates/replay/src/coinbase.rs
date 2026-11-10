@@ -41,6 +41,8 @@ pub struct RecordedLine {
 pub enum Message {
     #[serde(rename = "l2_data")]
     L2Data(L2Data),
+    #[serde(rename = "market_trades")]
+    MarketTrades(MarketTrades),
     #[serde(rename = "heartbeats")]
     Heartbeats(Sequenced),
     #[serde(rename = "subscriptions")]
@@ -52,6 +54,7 @@ impl Message {
     pub fn sequence_num(&self) -> u64 {
         match self {
             Message::L2Data(data) => data.sequence_num,
+            Message::MarketTrades(trades) => trades.sequence_num,
             Message::Heartbeats(other) | Message::Subscriptions(other) => other.sequence_num,
         }
     }
@@ -79,6 +82,45 @@ pub struct L2Event {
     pub kind: EventKind,
     pub product_id: String,
     pub updates: Vec<RawUpdate>,
+}
+
+/// A `market_trades` message: trades that actually happened.
+///
+/// Coinbase batches trades over 250 ms, so one message can hold many. The
+/// first message after subscribing is a snapshot of recent trades.
+#[derive(Debug, Deserialize)]
+pub struct MarketTrades {
+    pub sequence_num: u64,
+    pub timestamp: String,
+    pub events: Vec<TradeEvent>,
+}
+
+/// One batch of trades inside a `market_trades` message.
+#[derive(Debug, Deserialize)]
+pub struct TradeEvent {
+    #[serde(rename = "type")]
+    pub kind: EventKind,
+    pub trades: Vec<RawTrade>,
+}
+
+/// One trade, exactly as Coinbase sends it.
+#[derive(Debug, Deserialize)]
+pub struct RawTrade {
+    pub trade_id: String,
+    pub product_id: String,
+    pub price: String,
+    pub size: String,
+    /// The side of the order that was resting on the book (the maker).
+    pub side: TradeSide,
+    pub time: String,
+}
+
+/// Coinbase writes trade sides in capitals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum TradeSide {
+    Buy,
+    Sell,
 }
 
 /// A snapshot replaces the whole book; an update changes some levels.
@@ -172,6 +214,23 @@ mod tests {
         let line: RecordedLine = serde_json::from_str(HEARTBEAT).unwrap();
         assert!(matches!(line.msg, Message::Heartbeats(_)));
         assert_eq!(line.msg.sequence_num(), 3);
+    }
+
+    #[test]
+    fn parses_a_market_trades_line() {
+        let text = r#"{"recv_ns":2,"msg":{"channel":"market_trades","client_id":"","timestamp":"2026-11-10T18:30:00.1Z","sequence_num":7,"events":[{"type":"update","trades":[{"trade_id":"123","product_id":"BTC-USD","price":"73232.08","size":"0.0015","side":"SELL","time":"2026-11-10T18:30:00.05Z"}]}]}}"#;
+        let line: RecordedLine = serde_json::from_str(text).unwrap();
+        assert_eq!(line.msg.sequence_num(), 7);
+        let Message::MarketTrades(trades) = line.msg else {
+            panic!("expected market_trades");
+        };
+        let trade = &trades.events[0].trades[0];
+        assert_eq!(trades.events[0].kind, EventKind::Update);
+        assert_eq!(trade.side, TradeSide::Sell);
+        assert_eq!(
+            parse_fixed(&trade.size, BTC_USD.quantity_decimals),
+            Ok(150_000)
+        );
     }
 
     #[test]

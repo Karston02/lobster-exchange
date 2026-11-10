@@ -472,6 +472,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lobster-replay"
+version = "0.1.0"
+dependencies = [
+ "lobster-engine",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "log"
 version = "0.4.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
