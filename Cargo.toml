@@ -3,7 +3,7 @@
 # engine and add crates (replay, python bindings, server) as we go.
 [workspace]
 resolver = "2"
-members = ["crates/engine"]
+members = ["crates/engine", "crates/recorder"]
 
 [workspace.package]
 edition = "2024"

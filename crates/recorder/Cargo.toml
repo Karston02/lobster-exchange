@@ -1,0 +1,17 @@
+[package]
+name = "lobster-recorder"
+version = "0.1.0"
+description = "Records Coinbase's live level2 order book feed to disk, exactly as received"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+# Async runtime: lets one thread wait on the network, the clock and Ctrl+C at once
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "fs", "io-util", "sync"] }
+# Websocket client on top of tokio; native-tls uses macOS's built-in TLS
+tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+# StreamExt (.next()) and SinkExt (.send()) for the websocket
+futures-util = "0.3"
+# Reading just a few fields (channel, sequence_num) out of each message
+serde_json = "1"
