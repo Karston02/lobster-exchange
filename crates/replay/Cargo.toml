@@ -1,0 +1,14 @@
+[package]
+name = "lobster-replay"
+version = "0.1.0"
+description = "Parses recorded Coinbase level2 data and rebuilds the order book from it"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+# Reuse the engine's Side, Price and Quantity types
+lobster-engine = { path = "../engine" }
+# Turning JSON into Rust structs; `derive` generates the code from struct definitions
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
