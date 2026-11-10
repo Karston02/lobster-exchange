@@ -21,3 +21,7 @@ dist/
 CLAUDE.md
 NOTES.md
 ROADMAP.md
+/docs
+
+# Profiler output (samply)
+profile.json*
