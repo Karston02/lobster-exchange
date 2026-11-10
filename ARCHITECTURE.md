@@ -59,7 +59,7 @@ It does no I/O, no networking, no clocks, and no randomness. Everything else in 
 | `src/lib.rs`      | Declares modules and re-exports the public API                              | everything                  |
 | `tests/engine.rs` | Integration tests that use only the public API                              | the crate                   |
 
-Dependencies only point "down" this table, never in a cycle. Unit tests live next to the code they test (`#[cfg(test)] mod tests`); integration tests live in `tests/`.
+Dependencies only point "down" this table, never in a cycle. The modules themselves are private (`mod book;`, not `pub mod book;`), so the re-exports in `lib.rs` are the only public paths: users write `lobster_engine::Engine`, and internal file names can change without breaking anyone. Unit tests live next to the code they test (`#[cfg(test)] mod tests`); integration tests live in `tests/`.
 
 ## Key design decisions
 
