@@ -11,7 +11,8 @@ LOBSTER_HOST:LOBSTER_PORT (http://127.0.0.1:8000 by default).
 
 Routes: /api/status, /api/account, /api/portfolio, /api/quotes and
 /api/orders (Schwab, see account/),
-/api/recordings, /api/strategies and /ws/replay.
+/ws/live (live account updates, see live/), /api/recordings,
+/api/strategies and /ws/replay.
 
 The websocket at /ws/replay takes its settings as query parameters, then
 sends a "hello" message, one "tick" message per second of market time, and
@@ -20,6 +21,7 @@ a "done" message at the end. The page can send {"type": "pause"},
 """
 
 import asyncio
+import logging
 import re
 import sys
 from contextlib import asynccontextmanager
@@ -35,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from account import SchwabService, SchwabUnavailable  # noqa: E402
 from config import get_settings  # noqa: E402
 from db import open_database  # noqa: E402
+from live import LiveFeed  # noqa: E402
 from session import STRATEGIES, Session, list_recordings  # noqa: E402
 
 
@@ -45,7 +48,10 @@ async def lifespan(_: FastAPI):
     settings = get_settings()
     open_database(settings.db_path).close()
     app.state.schwab = SchwabService(settings.schwab, account_names=settings.account_names)
+    app.state.live = LiveFeed(app.state.schwab)
+    app.state.live.start()  # runs on the server whether or not a page is open
     yield
+    await app.state.live.stop()
     await app.state.schwab.close()
 
 
@@ -121,6 +127,40 @@ def strategies() -> list[dict]:
     return [{"key": key, "name": name, "description": text} for key, (name, text, _) in STRATEGIES.items()]
 
 
+@app.websocket("/ws/live")
+async def live(ws: WebSocket) -> None:
+    """Pushes repriced accounts, the portfolio and SPY whenever they change (at most once a second)."""
+    await ws.accept()
+    feed: LiveFeed = app.state.live
+    queue = feed.subscribe()
+
+    async def page_left() -> None:
+        # The page never sends anything; this returns when it closes. Without it, a closed
+        # page would only be noticed at the next update, which can be hours after the close.
+        try:
+            while True:
+                await ws.receive_text()
+        except WebSocketDisconnect:
+            pass
+
+    gone = asyncio.create_task(page_left())
+    try:
+        if feed.latest():
+            await ws.send_json(feed.latest())
+        while True:
+            update = asyncio.create_task(queue.get())
+            await asyncio.wait({update, gone}, return_when=asyncio.FIRST_COMPLETED)
+            if gone.done():
+                update.cancel()
+                break
+            await ws.send_json(update.result())
+    except (WebSocketDisconnect, RuntimeError):
+        pass  # closed mid-send
+    finally:
+        gone.cancel()
+        feed.unsubscribe(queue)
+
+
 @app.websocket("/ws/replay")
 async def replay(
     ws: WebSocket,
@@ -179,5 +219,6 @@ async def replay(
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)s")
     settings = get_settings()
     uvicorn.run(app, host=settings.host, port=settings.port)

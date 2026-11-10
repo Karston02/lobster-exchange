@@ -4,14 +4,17 @@ import { money, percentOf, signedMoney, signedPercent, tone } from "../../money"
 interface Props {
   portfolio: Portfolio;
   spy: Quote | null;
+  streaming: boolean; // prices are arriving from the live quote stream
 }
 
 /** The answer to "how is my portfolio doing today?": value, change, and SPY for comparison. */
-export function TodaySummary({ portfolio, spy }: Props) {
+export function TodaySummary({ portfolio, spy, streaming }: Props) {
   const changePct = percentOf(portfolio.day_change_cents, portfolio.previous_value_cents);
   return (
     <section aria-label="Portfolio today">
-      <div className="quiet">Portfolio · today</div>
+      <div className="quiet">
+        Portfolio · today{streaming && <span className="live-tag"> · live</span>}
+      </div>
       <div className="num home-value">{money(portfolio.total_value_cents)}</div>
       <div className="num home-change">
         <span className={tone(portfolio.day_change_cents)}>

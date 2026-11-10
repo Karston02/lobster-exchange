@@ -95,6 +95,11 @@ class SchwabService:
             out["problem"], out["message"] = error.reason, error.message
         return out
 
+    async def raw_client(self) -> Any:
+        """The schwab-py client itself, for the live quote stream. Same checks and errors as above."""
+        async with self._lock:
+            return await self._call(_same_client)
+
     async def close(self) -> None:
         if self._client is not None:
             await self._client.close_async_session()
@@ -181,3 +186,7 @@ def _entered_after(order: Order, cutoff: datetime) -> bool:
         return datetime.fromisoformat(order.entered_time) >= cutoff
     except ValueError:
         return False
+
+
+async def _same_client(client: Any) -> Any:
+    return client

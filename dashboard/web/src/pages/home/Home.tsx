@@ -1,26 +1,32 @@
 import type { Portfolio, Quotes } from "../../account/types";
+import { useLive } from "../../live/useLive";
 import { usePolling } from "../../usePolling";
 import { Holdings } from "./Holdings";
 import { TodaySummary } from "./TodaySummary";
 import "./home.css";
 
-const PORTFOLIO_MS = 15_000; // the server reuses Schwab answers for 10 s, so this costs little
+// Polling is the fallback for when the live connection is down
+const PORTFOLIO_MS = 15_000;
 const QUOTES_MS = 30_000;
 
 /** Home: how is my portfolio doing today? */
 export function Home() {
-  const portfolio = usePolling<Portfolio>("/api/portfolio", PORTFOLIO_MS);
-  const quotes = usePolling<Quotes>("/api/quotes?symbols=SPY", QUOTES_MS);
+  const live = useLive();
+  const useLiveData = live.connected && live.message !== null;
+  const portfolio = usePolling<Portfolio>("/api/portfolio", PORTFOLIO_MS, !useLiveData);
+  const quotes = usePolling<Quotes>("/api/quotes?symbols=SPY", QUOTES_MS, !useLiveData);
 
-  if (portfolio.loading) return <Page>Loading your portfolio…</Page>;
-  if (!portfolio.data) return <Page>{portfolio.error?.message ?? "Couldn't load your portfolio."}</Page>;
+  const data = useLiveData ? live.message!.portfolio : portfolio.data;
+  const spy = (useLiveData ? live.message!.quotes.SPY : quotes.data?.quotes.SPY) ?? null;
 
-  const data = portfolio.data;
+  if (!data && portfolio.loading) return <Page>Loading your portfolio…</Page>;
+  if (!data) return <Page>{portfolio.error?.message ?? "Couldn't load your portfolio."}</Page>;
+
   return (
     <main className="page narrow home">
-      <TodaySummary portfolio={data} spy={quotes.data?.quotes.SPY ?? null} />
+      <TodaySummary portfolio={data} spy={spy} streaming={useLiveData && live.message!.streaming} />
       <Holdings holdings={data.holdings} cashCents={data.cash_cents} />
-      {portfolio.error && <p className="quiet">Showing the last numbers: {portfolio.error.message}</p>}
+      {!useLiveData && portfolio.error && <p className="quiet">Showing the last numbers: {portfolio.error.message}</p>}
     </main>
   );
 }

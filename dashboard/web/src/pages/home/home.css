@@ -10,6 +10,10 @@
   font-size: 14px;
 }
 
+.live-tag {
+  color: var(--gain);
+}
+
 .home-value {
   font-size: 48px;
   font-weight: 500;

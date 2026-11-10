@@ -7,11 +7,13 @@ export interface Polled<T> {
   loading: boolean; // true until the first answer or error
 }
 
-/** GETs `url` now and every `everyMs`, skipping while the tab is hidden. */
-export function usePolling<T>(url: string, everyMs: number): Polled<T> {
+/** GETs `url` now and every `everyMs`, skipping while the tab is hidden.
+ *  With `enabled` false it stops asking (e.g. while live updates are flowing). */
+export function usePolling<T>(url: string, everyMs: number, enabled = true): Polled<T> {
   const [state, setState] = useState<Polled<T>>({ data: null, error: null, loading: true });
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     async function load() {
       if (document.hidden) return;
@@ -31,7 +33,7 @@ export function usePolling<T>(url: string, everyMs: number): Polled<T> {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", load);
     };
-  }, [url, everyMs]);
+  }, [url, everyMs, enabled]);
 
   return state;
 }

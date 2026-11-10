@@ -214,6 +214,15 @@ _Why:_ Home, Portfolio and later alerts must agree on "today's change". If each 
 _Today's change_ is the sum of each position's `currentDayProfitLoss` from Schwab; the percent is that change over yesterday's value (total minus change). SPY's change comes from `/api/quotes`, cached like everything else. It uses Schwab's `regular` block (the 8:30 to 3:00 Central session) rather than `quote`, which after hours includes extended-hours trades; that's the "SPY was up X% today" number.
 _No chart yet:_ Schwab doesn't keep your portfolio's value over time, so the Home chart needs the server to record it first (roadmap, step 2).
 
+### 23. Live updates: one Schwab stream, pushed to pages
+
+The server keeps one Schwab level one quote stream open for every stock you hold plus SPY (`dashboard/server/live/`). Pages connect to `/ws/live` and receive repriced accounts, the portfolio and SPY whenever something changed, at most once a second. Polling stays as the fallback while the websocket is down.
+_Why the server streams, not the browser:_ one connection serves every open page, the keys never reach the browser, and it keeps running with no tab open (needed later for forward tests and alerts).
+_Repricing on top of Schwab's numbers:_ a position moves by shares x (live price - snapshot price). Schwab's own day change and open P&L already handle shares bought today and similar details, so we only add the price move rather than recomputing from scratch. Accounts are reloaded every minute, which also catches trades and cash changes; options aren't in the equity stream and keep their snapshot value.
+_Coalescing:_ the stream can send many updates a second. Prices are merged as they arrive and published on a 1-second tick, and each page's queue holds only the newest message, so a slow page can never fall behind.
+_Changing symbols:_ when the held symbols change, the feed reconnects with the new list instead of re-subscribing on the open connection, because schwab-py says subscription calls aren't safe to run alongside message handling.
+_Regular session first:_ like the REST quotes, `REGULAR_MARKET_LAST_PRICE` is preferred over `LAST_PRICE`, so after-hours trades don't move the day's numbers.
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.
