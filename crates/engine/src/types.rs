@@ -1,5 +1,5 @@
 /// which side of the book an order is on (you're either a buyer or seller)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Side {
     /// A buyer. Buy orders rest on the bid side of the book
     Buy,
