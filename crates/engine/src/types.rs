@@ -1,14 +1,20 @@
-/// which side of the book an order is on (you're either a buyer or seller)
+//! Core types used throughout the engine.
+
+/// Which side of the book an order is on.
+///
+/// An `enum` is a type that can be exactly one of a fixed set of variants.
+/// An order is either a Buy or a Sell, never both and never anything else,
+/// and the compiler enforces that.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Side {
-    /// A buyer. Buy orders rest on the bid side of the book
+    /// A buyer. Buy orders rest on the **bid** side of the book.
     Buy,
-    /// A seller. Sell orders rest on the ask side of the book
+    /// A seller. Sell orders rest on the **ask** side of the book.
     Sell,
 }
 
 impl Side {
-    /// the other side. A buy order matches against sells, and vice versa.
+    /// Returns the other side. A buy order matches against sells, and vice versa.
     pub fn opposite(self) -> Side {
         match self {
             Side::Buy => Side::Sell,
@@ -17,13 +23,11 @@ impl Side {
     }
 }
 
-/**
- * A price, in integer ticks (e.g. cents). Never a float; see ARCHITECTURE.md #1.
- *
- * This is a "newtype": which means it wraps a single value and is treated
- * distinct from the underlying type it wraps. It's free at runtime but now
- * the compiler is going to treat Price and Quantity as distinct types.
- */
+/// A price, in integer ticks (e.g. cents). Never a float; see ARCHITECTURE.md #1.
+///
+/// This is a "newtype": a struct wrapping a single `u64`. It costs nothing at
+/// runtime, but the compiler now treats `Price` and `Quantity` as different
+/// types, so you can't accidentally pass a quantity where a price belongs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Price(pub u64);
 
@@ -45,8 +49,8 @@ pub struct Order {
     pub quantity: Quantity,
 }
 
-/// The Order struct represents a limit order in the order book.
 impl Order {
+    /// Creates a new limit order.
     pub fn new(id: OrderId, side: Side, price: Price, quantity: Quantity) -> Self {
         Order {
             id,
@@ -56,11 +60,12 @@ impl Order {
         }
     }
 
-    /**
-     * This determines whether the order would cross with a resting (existing) order at the given price.
-     * A buy order crosses if the resting sell is at or below our price.
-     * A sell order crosses if the resting buy is at or above our price.
-     */
+    /// Returns whether this order would trade against a resting order at `resting_price`.
+    ///
+    /// - A **buy** crosses if the resting sell is at or *below* our price
+    ///   (someone is selling for no more than we're willing to pay).
+    /// - A **sell** crosses if the resting buy is at or *above* our price
+    ///   (someone is paying at least what we're asking).
     pub fn crosses(&self, resting_price: Price) -> bool {
         match self.side {
             Side::Buy => resting_price <= self.price,
@@ -69,11 +74,14 @@ impl Order {
     }
 }
 
-/**
- * Represents a completed trade between a maker and a taker.
- * The maker is the order that was already resting on the book and the taker is
- * the incoming order that it "took" liquidity from.
- */
+/// A completed match between two orders.
+///
+/// - The **maker** is the order that was already resting on the book
+///   (it "made" liquidity available).
+/// - The **taker** is the incoming order that crossed the book
+///   (it "took" that liquidity).
+///
+/// Trades always happen at the **maker's** price.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Trade {
     pub maker_order_id: OrderId,
@@ -86,7 +94,7 @@ pub struct Trade {
 mod tests {
     use super::*;
 
-    /// helper so tests read cleanly.
+    /// Builds a test order with a fixed id and quantity, so tests read cleanly.
     fn order(side: Side, price: u64) -> Order {
         Order::new(OrderId(1), side, Price(price), Quantity(10))
     }
@@ -106,15 +114,15 @@ mod tests {
     #[test]
     fn buy_crosses_cheaper_or_equal_sell() {
         let buy = order(Side::Buy, 100);
-        assert!(buy.crosses(Price(99))); // seller asks less than we pay: trade
-        assert!(buy.crosses(Price(100))); // exact match: trade
-        assert!(!buy.crosses(Price(101))); // seller wants more: no trade
+        assert!(buy.crosses(Price(99))); // Seller asks less than we pay: trade
+        assert!(buy.crosses(Price(100))); // Exact match: trade
+        assert!(!buy.crosses(Price(101))); // Seller wants more: no trade
     }
 
     #[test]
     fn sell_crosses_higher_or_equal_buy() {
         let sell = order(Side::Sell, 100);
-        assert!(sell.crosses(Price(101))); // buyer pays more than we ask: trade
-        assert!(sell.crosses(Price(100))); // exact match: trade
+        assert!(sell.crosses(Price(101))); // Buyer pays more than we ask: trade
+        assert!(sell.crosses(Price(100))); // Exact match: trade
     }
 }
