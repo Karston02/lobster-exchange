@@ -31,7 +31,15 @@ impl Engine {
                 price,
                 quantity,
             } => self.new_limit(id, side, price, quantity),
-            Command::NewMarket { id, side, quantity } => self.new_market(id, side, quantity),
+            Command::NewMarket { id, side, quantity } => {
+                self.new_immediate(id, side, None, quantity)
+            }
+            Command::NewImmediateOrCancel {
+                id,
+                side,
+                price,
+                quantity,
+            } => self.new_immediate(id, side, Some(price), quantity),
             Command::Cancel { id } => self.cancel(id),
         }
     }
@@ -64,17 +72,34 @@ impl Engine {
         events
     }
 
-    fn new_market(&mut self, id: OrderId, side: Side, quantity: Quantity) -> Vec<Event> {
+    /// Market orders (`limit` is `None`) and immediate-or-cancel orders
+    /// (`limit` is `Some`): trade what's possible now, cancel the rest.
+    fn new_immediate(
+        &mut self,
+        id: OrderId,
+        side: Side,
+        limit: Option<Price>,
+        quantity: Quantity,
+    ) -> Vec<Event> {
+        if limit.is_some_and(|price| price.0 == 0) {
+            return vec![Event::Rejected {
+                id,
+                reason: RejectReason::ZeroPrice,
+            }];
+        }
         if let Some(reason) = self.check_new_order(id, quantity) {
             return vec![Event::Rejected { id, reason }];
         }
 
         let mut events = vec![Event::Accepted { id }];
-        let trades = self.book.submit_market(id, side, quantity);
+        let trades = match limit {
+            Some(price) => self.book.submit_immediate(id, side, price, quantity),
+            None => self.book.submit_market(id, side, quantity),
+        };
         let filled: u64 = trades.iter().map(|trade| trade.quantity.0).sum();
         events.extend(trades.into_iter().map(Event::Trade));
 
-        // Market orders never rest, so anything unfilled is cancelled
+        // These orders never rest, so anything unfilled is cancelled
         let remaining = quantity.0 - filled;
         if remaining > 0 {
             events.push(Event::Cancelled {

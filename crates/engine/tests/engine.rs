@@ -244,3 +244,78 @@ fn book_is_never_left_crossed() {
         }
     }
 }
+
+fn ioc(id: u64, side: Side, price: u64, quantity: u64) -> Command {
+    Command::NewImmediateOrCancel {
+        id: OrderId(id),
+        side,
+        price: Price(price),
+        quantity: Quantity(quantity),
+    }
+}
+
+#[test]
+fn ioc_fills_within_its_limit_and_cancels_the_rest() {
+    let mut engine = Engine::new();
+    engine.process(limit(1, Side::Sell, 100, 3));
+    engine.process(limit(2, Side::Sell, 102, 5)); // Above the IOC's limit
+
+    let events = engine.process(ioc(3, Side::Buy, 101, 10));
+    assert_eq!(
+        events,
+        vec![
+            accepted(3),
+            trade(1, 3, 100, 3),
+            Event::Cancelled {
+                id: OrderId(3),
+                remaining: Quantity(7),
+                reason: CancelReason::NoLiquidity,
+            },
+        ]
+    );
+    // Unlike a limit order, nothing rests, and the 102 ask is untouched
+    assert_eq!(engine.book().best_bid(), None);
+    assert_eq!(engine.book().best_ask(), Some(Price(102)));
+}
+
+#[test]
+fn ioc_that_cannot_trade_is_cancelled_in_full() {
+    let mut engine = Engine::new();
+    engine.process(limit(1, Side::Buy, 99, 5));
+
+    let events = engine.process(ioc(2, Side::Sell, 100, 4));
+    assert_eq!(
+        events,
+        vec![
+            accepted(2),
+            Event::Cancelled {
+                id: OrderId(2),
+                remaining: Quantity(4),
+                reason: CancelReason::NoLiquidity,
+            },
+        ]
+    );
+    assert_eq!(engine.book().order_count(), 1);
+}
+
+#[test]
+fn ioc_takes_the_front_of_the_line_first() {
+    let mut engine = Engine::new();
+    engine.process(limit(1, Side::Buy, 100, 5));
+    engine.process(limit(2, Side::Buy, 100, 5));
+
+    let events = engine.process(ioc(3, Side::Sell, 100, 6));
+    assert_eq!(
+        events,
+        vec![accepted(3), trade(1, 3, 100, 5), trade(2, 3, 100, 1)]
+    );
+}
+
+#[test]
+fn ioc_with_zero_price_is_rejected() {
+    let mut engine = Engine::new();
+    assert_eq!(
+        engine.process(ioc(1, Side::Buy, 0, 5)),
+        vec![rejected(1, RejectReason::ZeroPrice)]
+    );
+}

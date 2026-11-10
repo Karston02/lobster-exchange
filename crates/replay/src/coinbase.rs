@@ -123,6 +123,15 @@ pub enum TradeSide {
     Sell,
 }
 
+impl From<TradeSide> for Side {
+    fn from(side: TradeSide) -> Side {
+        match side {
+            TradeSide::Buy => Side::Buy,
+            TradeSide::Sell => Side::Sell,
+        }
+    }
+}
+
 /// A snapshot replaces the whole book; an update changes some levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]

@@ -119,8 +119,24 @@ _Why:_ going through `f64` would reintroduce the rounding errors decision #1 avo
 _Why:_ new orders really do join the back. Cancels can come from anywhere, and assuming "from the back" is pessimistic for a bot waiting in line: orders ahead of it never disappear, so backtests won't overstate how fast it gets filled. Trades (from `market_trades`) will consume from the front once the bot is in the loop (Phase 4); the assumption can become a setting (back / front / proportional) to compare.
 _Checked:_ on a real 15,882-message recording, the engine's book matched Coinbase's at the top after every message and at every level at the end, with zero unexpected trades or rejections (361,872 commands, 0.24 s).
 
+### 11. Trades replay in exchange-time order, as immediate-or-cancel orders
+
+Coinbase sends book changes as they happen but batches trades every 250 ms, so a fill's book change usually arrives before the trade that caused it. The replayer reads the whole file, then sorts book changes (`event_time`) and trades (`time`) by Coinbase's timestamps (`timeline.rs`). Each trade becomes an immediate-or-cancel order on the taker's side at the trade's price, which fills the front of the line and never rests. Coinbase's `side` on a trade is the maker's side; the data confirms it (1,732 of 1,736 trades had a matching bid/offer change within 250 ms).
+_Why:_ processed in arrival order, a fill would be counted twice (once as a cancel from the back, once as a trade). In exchange-time order the trade comes first, takes the front of the line, and the following book change finds the level already at the right total.
+_Measured_ on a 2,224-trade recording: a fill's book change is stamped a median 16 ms after its trade (93% after, some up to ~30 ms before). Moving trades earlier (`--trade-lead-ms`) made things worse at every value tried, so the default is 0:
+
+| Trade lead | Trade volume the engine couldn't fill | Steps with top-of-book mismatch |
+|---|---|---|
+| 0 ms | 20.8% | 0.38% |
+| 10 ms | 21.6% | 1.74% |
+| 50 ms | 21.7% | 9.89% |
+| 250 ms | 32.1% | 31.0% |
+
+The ~21% unfilled volume breaks down as: the engine's level already drained by earlier trades or cancels (~12%), levels smaller than the trade (~4%), prices that never appeared in the level2 feed at all (~5%, liquidity added and taken between updates), and better prices resting (~0.3%). The book itself stays exact: 0 level mismatches at the end. For a bot, unfilled trade volume means missed fills, which errs on the pessimistic side.
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.
 - **Duplicate ids are only checked against resting orders:** an id from an order that already filled or was cancelled can be reused. Tracking every id ever seen would grow memory forever; we'll revisit if the replayer needs stricter checks.
+- **Trade reconciliation is ~79% by volume:** see decision #11. A smarter matcher (e.g. re-classifying a shrink at the touch as a fill when a matching trade follows within a few ms) could raise it.
 - **No latency yet:** in reality, our orders reach the exchange a few milliseconds late. We'll add simulated latency so the backtest isn't unrealistically optimistic.

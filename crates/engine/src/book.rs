@@ -88,7 +88,19 @@ impl OrderBook {
         self.take_liquidity(id, side, &mut quantity, None)
     }
 
-    /// The matching loop shared by limit and market orders.
+    /// Submits an immediate-or-cancel order: trades like a limit order at
+    /// `limit` or better, but never rests. Returns the trades it produced.
+    pub(crate) fn submit_immediate(
+        &mut self,
+        id: OrderId,
+        side: Side,
+        limit: Price,
+        mut quantity: Quantity,
+    ) -> Vec<Trade> {
+        self.take_liquidity(id, side, &mut quantity, Some(limit))
+    }
+
+    /// The matching loop shared by limit, market and immediate-or-cancel orders.
     ///
     /// Trades an incoming order against the opposite side, best price first
     /// and oldest order first at each price, shrinking `remaining` as it fills.

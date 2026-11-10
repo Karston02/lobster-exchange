@@ -7,6 +7,9 @@
 //! - A level grows: a new synthetic order for the difference joins the back.
 //! - A level shrinks: synthetic orders are removed from the back of the line.
 //!
+//! - A trade happens: an immediate-or-cancel order at the trade's price takes
+//!   it from the front of the line, the way a real fill does.
+//!
 //! Removing from the back is a pessimistic assumption about cancels. When a
 //! market-making bot sits in the line later, orders ahead of it never vanish,
 //! so it only moves forward through trades. See ARCHITECTURE.md, decision #10.
@@ -16,6 +19,7 @@ use std::collections::HashMap;
 use lobster_engine::{Command, Engine, Event, OrderId, Price, Quantity, Side};
 
 use crate::l2book::LevelUpdate;
+use crate::timeline::TradePrint;
 
 /// Keeps an engine's book in step with a level2 feed.
 #[derive(Debug)]
@@ -57,6 +61,32 @@ impl L2Translator {
     /// orders should only ever rest and be cancelled, so this should be zero.
     pub fn unexpected_events(&self) -> u64 {
         self.unexpected_events
+    }
+
+    /// Replays one exchange trade against the front of the line.
+    ///
+    /// Sends an immediate-or-cancel order on the taker's side at the trade's
+    /// price. Returns how much of the trade the engine could not fill: zero
+    /// when our book already had the resting quantity the trade consumed.
+    pub fn apply_trade(&mut self, trade: TradePrint) -> Quantity {
+        let id = self.new_id();
+        let events = self.engine.process(Command::NewImmediateOrCancel {
+            id,
+            side: trade.maker_side.opposite(),
+            price: trade.price,
+            quantity: trade.quantity,
+        });
+        self.commands_sent += 1;
+
+        let mut unfilled = Quantity(0);
+        for event in events {
+            match event {
+                Event::Accepted { .. } | Event::Trade(_) => {}
+                Event::Cancelled { remaining, .. } => unfilled = remaining,
+                Event::Rejected { .. } => self.unexpected_events += 1,
+            }
+        }
+        unfilled
     }
 
     /// Starts over with an empty book, before applying a snapshot.
@@ -259,6 +289,47 @@ mod tests {
         let mut translator = L2Translator::new();
         translator.apply(&[level(Side::Buy, 100, 5), level(Side::Buy, 100, 2)]);
         assert_eq!(line(&translator, Side::Buy, 100), vec![2]);
+    }
+
+    fn trade(maker_side: Side, price: u64, quantity: u64) -> TradePrint {
+        TradePrint {
+            maker_side,
+            price: Price(price),
+            quantity: Quantity(quantity),
+        }
+    }
+
+    #[test]
+    fn trade_takes_from_the_front_of_the_line() {
+        let mut translator = L2Translator::new();
+        translator.apply(&[level(Side::Buy, 100, 5)]);
+        translator.apply(&[level(Side::Buy, 100, 8)]); // Line: [5, 3]
+
+        let unfilled = translator.apply_trade(trade(Side::Buy, 100, 6));
+        assert_eq!(unfilled, Quantity(0));
+        assert_eq!(line(&translator, Side::Buy, 100), vec![2]);
+
+        // Coinbase's next update agrees (8 - 6 = 2), so nothing more changes
+        let commands = translator.commands_sent();
+        translator.apply(&[level(Side::Buy, 100, 2)]);
+        assert_eq!(translator.commands_sent(), commands);
+        assert_eq!(translator.unexpected_events(), 0);
+    }
+
+    #[test]
+    fn trade_the_book_cannot_cover_reports_what_is_missing() {
+        let mut translator = L2Translator::new();
+        translator.apply(&[level(Side::Sell, 101, 2)]);
+        let unfilled = translator.apply_trade(trade(Side::Sell, 101, 5));
+        assert_eq!(unfilled, Quantity(3));
+        assert_eq!(translator.engine().book().best_ask(), None);
+    }
+
+    #[test]
+    fn trade_never_rests_on_the_book() {
+        let mut translator = L2Translator::new();
+        translator.apply_trade(trade(Side::Buy, 100, 5)); // Nothing to trade against
+        assert_eq!(translator.engine().book().order_count(), 0);
     }
 
     #[test]
