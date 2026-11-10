@@ -1,5 +1,6 @@
-//! Replays a recording and rebuilds Coinbase's order book from it, checking
-//! the data along the way.
+//! Replays a recording: rebuilds Coinbase's order book from it, feeds the same
+//! changes into our matching engine as synthetic orders, and checks that the
+//! two books agree.
 //!
 //! ```text
 //! cargo run --release -p lobster-replay -- data/coinbase/BTC-USD/<file>.jsonl
@@ -11,7 +12,8 @@ use std::time::Instant;
 
 use lobster_engine::{Price, Quantity, Side};
 use lobster_replay::coinbase::{BTC_USD, EventKind, Message, RecordedLine};
-use lobster_replay::l2book::L2Book;
+use lobster_replay::l2book::{L2Book, LevelUpdate};
+use lobster_replay::translate::L2Translator;
 
 /// What we found while replaying, printed at the end.
 #[derive(Debug, Default)]
@@ -30,6 +32,8 @@ struct Stats {
     sequence_gaps: u64,
     /// Messages after which the book was crossed (bid >= ask): should be zero
     crossed_after: u64,
+    /// Messages after which the engine's best bid or ask differed from Coinbase's
+    top_mismatches: u64,
     first_recv_ns: Option<u64>,
     last_recv_ns: Option<u64>,
 }
@@ -43,6 +47,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let started = Instant::now();
     let reader = BufReader::new(File::open(&path)?);
     let mut book = L2Book::new();
+    let mut translator = L2Translator::new();
+    let mut updates: Vec<LevelUpdate> = Vec::new();
     let mut stats = Stats::default();
     let mut last_sequence: Option<u64> = None;
 
@@ -93,8 +99,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for event in &data.events {
             if event.kind == EventKind::Snapshot {
                 book.clear();
+                translator.reset();
                 stats.snapshots += 1;
             }
+            updates.clear();
             for raw in &event.updates {
                 let update = match raw.to_level_update(BTC_USD) {
                     Ok(update) => update,
@@ -110,20 +118,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     EventKind::Update => stats.updates += 1,
                 }
                 book.apply(update);
+                updates.push(update);
             }
+            translator.apply(&updates);
         }
 
         // Checked after the whole message, since a message can briefly cross mid-way
         if book.is_crossed() {
             stats.crossed_after += 1;
         }
+        if !tops_match(&book, &translator) {
+            stats.top_mismatches += 1;
+        }
     }
 
-    report(&path, &stats, &book, started.elapsed().as_secs_f64());
+    let elapsed = started.elapsed().as_secs_f64();
+    report(&path, &stats, &book, &translator, elapsed);
     Ok(())
 }
 
-fn report(path: &str, stats: &Stats, book: &L2Book, elapsed_secs: f64) {
+/// Returns whether the engine's best bid and ask (price and size) equal Coinbase's.
+fn tops_match(book: &L2Book, translator: &L2Translator) -> bool {
+    let engine_book = translator.engine().book();
+    let engine_top = |side: Side, best: Option<Price>| {
+        best.map(|price| (price, engine_book.quantity_at(side, price)))
+    };
+    book.best_bid() == engine_top(Side::Buy, engine_book.best_bid())
+        && book.best_ask() == engine_top(Side::Sell, engine_book.best_ask())
+}
+
+/// Compares every level of both books. Returns how many levels differ.
+fn full_mismatches(book: &L2Book, translator: &L2Translator) -> usize {
+    let engine_book = translator.engine().book();
+    let mut mismatches = 0;
+    for side in [Side::Buy, Side::Sell] {
+        mismatches += book
+            .levels(side)
+            .filter(|(price, quantity)| engine_book.quantity_at(side, *price) != *quantity)
+            .count();
+        // Levels the engine has but Coinbase doesn't
+        mismatches += engine_book
+            .level_count(side)
+            .saturating_sub(book.levels(side).count());
+    }
+    mismatches
+}
+
+fn report(path: &str, stats: &Stats, book: &L2Book, translator: &L2Translator, elapsed_secs: f64) {
     let recorded_secs = match (stats.first_recv_ns, stats.last_recv_ns) {
         (Some(first), Some(last)) => (last - first) as f64 / 1e9,
         _ => 0.0,
@@ -159,7 +200,24 @@ fn report(path: &str, stats: &Stats, book: &L2Book, elapsed_secs: f64) {
     println!("    bad numbers:      {}", stats.bad_numbers);
     println!("    sequence gaps:    {}", stats.sequence_gaps);
     println!("    crossed book:     {}", stats.crossed_after);
+    println!(
+        "    engine vs Coinbase, best bid/ask: {}",
+        stats.top_mismatches
+    );
+    println!(
+        "    engine vs Coinbase, all levels:   {}",
+        full_mismatches(book, translator)
+    );
+    println!(
+        "    unexpected engine events:         {}",
+        translator.unexpected_events()
+    );
     println!();
+    println!(
+        "  engine: {} commands sent, {} orders resting",
+        translator.commands_sent(),
+        translator.engine().book().order_count()
+    );
 
     let (bid_levels, ask_levels) = book.depth();
     println!("  final book: {bid_levels} bid levels, {ask_levels} ask levels");
