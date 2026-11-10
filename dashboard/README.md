@@ -41,6 +41,7 @@ Backtests, pick a recording and a strategy, and press Start. Speed is market sec
 - `web/src/shell/`: `TopBar`, `ConnectionStatus` (the status dot) and `SettingsPanel`.
 - `web/src/api.ts`, `usePolling.ts`: fetch JSON with explainable errors; re-fetch on a timer, paused while the tab is hidden.
 - `web/src/money.ts`: cents to `$1,234.56`, signed changes and percents. `account/types.ts` mirrors the server's account records.
+- `web/src/components/Fold.tsx`: the design's collapsed section (`<details>`), whose label says what's inside. `format.ts`: shares, times, Schwab's ALL_CAPS words.
 - `web/src/pages/`: one file per page. Pages not built yet are one quiet line in `placeholders.tsx`.
 - `web/src/replay/`: the order book replay (`ReplayView`, its components, `useReplay`, message `types`). Its styles are nested under `.replay` so they stay out of the rest of the app.
 - `web/src/styles.css`: the theme (colors as CSS variables, Inter for text, JetBrains Mono for numbers via `.num`).
