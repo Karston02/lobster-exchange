@@ -6,3 +6,4 @@
 pub mod coinbase;
 pub mod decimal;
 pub mod l2book;
+pub mod translate;
