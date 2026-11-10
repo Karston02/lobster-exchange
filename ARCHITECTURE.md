@@ -23,7 +23,8 @@ lobster-exchange is a simulated exchange plus a market-making bot. Real market d
 | Component                       | Language         | Crate / folder  | Phase |
 | ------------------------------- | ---------------- | --------------- | ----- |
 | Matching engine                 | Rust             | `crates/engine` | 2     |
-| Market data recorder + replayer | Rust             | `crates/replay` | 3     |
+| Market data recorder           | Rust             | `crates/recorder` | 3     |
+| Market data replayer            | Rust             | `crates/replay` | 3     |
 | Python bindings                 | Rust (PyO3)      | `crates/py`     | 4     |
 | Strategies + backtests          | Python           | `strategies/`   | 4     |
 | Live server                     | Rust (axum)      | `crates/server` | 5     |
@@ -101,6 +102,11 @@ _Why:_ each part has one job and can be tested on its own, the matching loop sta
 
 The `HashMap<OrderId, (Side, Price)>` index uses `IdHasher` (`src/id_hash.rs`), a multiply-and-rotate hash in the style of FxHash, instead of Rust's default SipHash.
 _Why:_ profiling showed the index's hashing was the biggest single engine cost. SipHash protects against hash-flooding attacks (an attacker choosing keys that collide), which matters for maps keyed by untrusted input. Our ids come from our own replayer and bot, so we trade that protection for speed. If the engine ever accepted ids from untrusted clients, we'd assign our own internal ids instead.
+
+### 8. The recorder saves raw messages, one file per connection
+
+`lobster-recorder` writes every Coinbase message untouched, wrapped as `{"recv_ns": <our receive time>, "msg": <original>}`, one per line. Each connection gets its own file, and a missed `sequence_num` ends the connection on purpose.
+_Why:_ "record raw, parse later": if the parser has a bug, we fix it and re-parse instead of losing the data. Each new connection starts with a full book snapshot, so every file can be replayed on its own, and a file is never silently corrupted by a gap. Our receive time is kept for measuring feed latency later.
 
 ## Known limitations (to address later)
 
