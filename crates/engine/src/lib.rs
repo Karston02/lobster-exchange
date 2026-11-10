@@ -7,6 +7,7 @@
 
 mod book;
 mod engine;
+mod id_hash;
 mod messages;
 mod types;
 
