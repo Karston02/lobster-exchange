@@ -33,7 +33,7 @@ fn parse_side(side: &str) -> PyResult<Side> {
 #[pyclass(name = "Event", module = "lobster", frozen, get_all)]
 #[derive(Debug, Clone, Default)]
 pub struct PyEvent {
-    /// "accepted", "trade", "cancelled" or "rejected".
+    /// "accepted", "trade", "cancelled", "reduced" or "rejected".
     kind: String,
     /// The order this is about (accepted, cancelled, rejected).
     order_id: Option<u64>,
@@ -45,7 +45,7 @@ pub struct PyEvent {
     price: Option<u64>,
     /// Trades only: quantity in lots.
     quantity: Option<u64>,
-    /// Cancels only: how much was still unfilled.
+    /// Cancels and reductions: how much is (or was) still unfilled.
     remaining: Option<u64>,
     /// Why an order was cancelled or rejected.
     reason: Option<String>,
@@ -67,6 +67,11 @@ impl PyEvent {
                 self.order_id.unwrap_or_default(),
                 self.remaining.unwrap_or_default(),
                 self.reason.as_deref().unwrap_or("")
+            ),
+            "reduced" => format!(
+                "Event(reduced: order {}, {} remaining)",
+                self.order_id.unwrap_or_default(),
+                self.remaining.unwrap_or_default()
             ),
             "rejected" => format!(
                 "Event(rejected: order {}, {})",
@@ -113,6 +118,12 @@ impl From<Event> for PyEvent {
                     }
                     .into(),
                 ),
+                ..Default::default()
+            },
+            Event::Reduced { id, remaining } => PyEvent {
+                kind: "reduced".into(),
+                order_id: Some(id.0),
+                remaining: Some(remaining.0),
                 ..Default::default()
             },
             Event::Rejected { id, reason } => PyEvent {
@@ -203,6 +214,14 @@ impl PyEngine {
     /// Remove a resting order.
     fn cancel(&mut self, id: u64) -> Vec<PyEvent> {
         self.run(Command::Cancel { id: OrderId(id) })
+    }
+
+    /// Shrink a resting order by `by`, keeping its place in line.
+    fn reduce(&mut self, id: u64, by: u64) -> Vec<PyEvent> {
+        self.run(Command::Reduce {
+            id: OrderId(id),
+            by: Quantity(by),
+        })
     }
 
     fn best_bid(&self) -> Option<u64> {
