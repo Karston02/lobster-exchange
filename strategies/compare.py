@@ -13,7 +13,7 @@ import argparse
 from pathlib import Path
 
 import harness
-from strats import ImbalanceFilter, InventorySkew, KeepPlace, Naive
+from strats import AvellanedaStoikov, ImbalanceFilter, InventorySkew, KeepPlace, Naive
 from units import lots
 
 
@@ -25,6 +25,8 @@ def main() -> None:
     parser.add_argument("--skew-ticks", type=int, default=1)
     parser.add_argument("--imbalance-threshold", type=float, default=0.6)
     parser.add_argument("--imbalance-levels", type=int, default=1)
+    parser.add_argument("--gamma", type=float, default=1e-5)
+    parser.add_argument("--as-k", type=float, default=1.0)
     parser.add_argument("--latency-ms", type=float, default=10)
     parser.add_argument("--maker-fee-bps", type=int, default=0)
     parser.add_argument("--taker-fee-bps", type=int, default=0)
@@ -44,6 +46,7 @@ def main() -> None:
             args.imbalance_threshold,
             args.imbalance_levels,
         ),
+        AvellanedaStoikov(size, lots(args.max_position_btc), gamma=args.gamma, k=args.as_k),
     ]
     config = {
         "latency_ms": args.latency_ms,
