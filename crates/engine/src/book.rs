@@ -1,7 +1,8 @@
 //! The order book: every resting order, organized by side and price.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 
+use crate::id_hash::IdMap;
 use crate::types::{Order, OrderId, Price, Quantity, Side, Trade};
 
 /// One side of the book: every price level, mapped to its queue of orders.
@@ -18,7 +19,7 @@ pub struct OrderBook {
     asks: Levels,
     /// Where each resting order lives (its side and price), so cancel can jump
     /// straight to the right price level instead of searching the whole book.
-    index: HashMap<OrderId, (Side, Price)>,
+    index: IdMap<OrderId, (Side, Price)>,
 }
 
 impl OrderBook {
