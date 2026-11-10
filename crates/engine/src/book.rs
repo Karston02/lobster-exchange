@@ -1,14 +1,13 @@
-// The order book: every resting order, organized by side and price.
+//! The order book: every resting order, organized by side and price.
 
 use std::collections::{BTreeMap, VecDeque};
 
 use crate::types::{Order, Price, Quantity, Side};
 
-
-// represents all of the price leves (tree so they're kept sorted).
+/// represents all of the price leves (tree so they're kept sorted).
 type Levels = BTreeMap<Price, VecDeque<Order>>;
 
-// A limit order book with a bid (buy) side and an ask (sell) side.
+/// A limit order book with a bid (buy) side and an ask (sell) side.
 #[derive(Debug, Default)]
 pub struct OrderBook {
     bids: Levels,
@@ -16,12 +15,12 @@ pub struct OrderBook {
 }
 
 impl OrderBook {
-    // An empty book.
+    /// An empty book.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /*
+    /**
      * Put an order on the book to "rest" (or wait) in line at its price.
      * This doesn't check for matches, that's the matching step.
      */
@@ -34,26 +33,26 @@ impl OrderBook {
         levels.entry(order.price).or_default().push_back(order);
     }
 
-    // The highest price anyone is willing to buy at, or `None` if there are no bids.
+    /// The highest price anyone is willing to buy at, or `None` if there are no bids.
     pub fn best_bid(&self) -> Option<Price> {
         // Bids: higher is better, so the best is the LAST (largest) key.
         self.bids.last_key_value().map(|(price, _)| *price)
     }
 
-    // The lowest price anyone is willing to sell at, or `None` if there are no asks.
+    /// The lowest price anyone is willing to sell at, or `None` if there are no asks.
     pub fn best_ask(&self) -> Option<Price> {
         // Asks: lower is better, so the best is the FIRST (smallest) key.
         self.asks.first_key_value().map(|(price, _)| *price)
     }
 
-    // The gap between best ask and best bid, in ticks. `None` if either side is empty.
+    /// The gap between best ask and best bid, in ticks. `None` if either side is empty.
     pub fn spread(&self) -> Option<u64> {
         let bid = self.best_bid()?;
         let ask = self.best_ask()?;
         Some(ask.0 - bid.0)
     }
 
-    // Total quantity waiting at one price on one side (0 if nothing is there).
+    /// Total quantity waiting at one price on one side (0 if nothing is there).
     pub fn quantity_at(&self, side: Side, price: Price) -> Quantity {
         let levels = match side {
             Side::Buy => &self.bids,
@@ -66,7 +65,7 @@ impl OrderBook {
         Quantity(total)
     }
 
-    // The queue of orders at one price, front of the line first.
+    /// The queue of orders at one price, front of the line first.
     pub fn orders_at(&self, side: Side, price: Price) -> Vec<&Order> {
         let levels = match side {
             Side::Buy => &self.bids,
