@@ -66,9 +66,9 @@ def settings(tmp_path, login_days_ago=1, keys=True) -> SchwabSettings:
     )
 
 
-def service(tmp_path, client=None, **kwargs) -> SchwabService:
+def service(tmp_path, client=None, names=None, **kwargs) -> SchwabService:
     client = client or FakeClient()
-    return SchwabService(settings(tmp_path, **kwargs), client_factory=lambda: client, now=lambda: NOW)
+    return SchwabService(settings(tmp_path, **kwargs), client_factory=lambda: client, now=lambda: NOW, account_names=names)
 
 
 def test_accounts_are_fetched_once_then_cached(tmp_path):
@@ -81,6 +81,7 @@ def test_accounts_are_fetched_once_then_cached(tmp_path):
     first, second = asyncio.run(twice())
     assert first == second and len(first) == 2
     assert client.calls == 1
+    assert svc.accounts_fetched_at() == NOW
 
 
 def test_orders_keep_open_ones_and_the_last_day(tmp_path):
@@ -119,7 +120,7 @@ def test_status_reports_facts_only(tmp_path):
     status = asyncio.run(service(tmp_path).status())
 
     assert status["connected"] is True
-    assert status["accounts"] == ["…0000", "…1234"]
+    assert status["accounts"] == ["…0000", "…1234"]  # no names set, so the digits
     assert status["login_expires_at"] == (NOW - timedelta(days=1) + timedelta(days=7)).replace(microsecond=0).isoformat()
     text = json.dumps(status)
     assert "99990000" not in text and '"k"' not in text
@@ -156,3 +157,15 @@ def test_portfolio_reuses_the_cached_accounts(tmp_path):
 
     assert asyncio.run(run()).account_count == 2
     assert client.calls == 1
+
+
+def test_accounts_get_your_names_by_last_four_digits(tmp_path):
+    named = asyncio.run(service(tmp_path, names={"1234": "Roth IRA", "*": "Schwab Cash"}).accounts())
+
+    assert {a.last4: a.name for a in named} == {"…0000": "Schwab Cash", "…1234": "Roth IRA"}
+
+
+def test_unnamed_accounts_show_their_last_four_digits(tmp_path):
+    plain = asyncio.run(service(tmp_path, names={"1234": "Roth IRA"}).accounts())
+
+    assert [a.name for a in plain] == ["…0000", "Roth IRA"]

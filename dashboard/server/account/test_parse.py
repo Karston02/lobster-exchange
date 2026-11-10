@@ -40,6 +40,7 @@ def test_accounts_parse_into_cents_with_masked_numbers():
     assert margin.open_pnl_cents == 43120 + 12000
     assert [p.symbol for p in margin.positions] == ["SPY", "AAPL"]  # biggest first
     assert margin.positions[0].quantity == 7.5
+    assert margin.positions[0].price_cents == 51600  # $3,870.00 / 7.5 shares
 
 
 def test_the_full_account_number_never_survives_parsing():
