@@ -13,7 +13,15 @@ one change is worth:
   book says is about to be run over: if sellers heavily outnumber buyers at
   the top of the book, don't bid (the price is likely to drop through us),
   and the reverse. `signals.py` checks whether that signal holds in the data.
+- `AvellanedaStoikov` (v4): the classic model from the 2008 paper "High-
+  frequency trading in a limit order book". Quotes around a *reservation
+  price* that shifts against the position, with a spread that widens when the
+  market is volatile. On a one-tick-wide market, it mostly decides when to
+  step back from the best price.
 """
+
+import math
+from collections import deque
 
 import lobster
 
@@ -118,4 +126,71 @@ class ImbalanceFilter(InventorySkew):
         if imbalance > self.threshold:
             targets["sell"] = None  # Buyers dominate: an ask would likely get run over
         return targets
+
+
+class AvellanedaStoikov(KeepPlace):
+    name = "v4 avellaneda-stoikov"
+
+    def __init__(
+        self,
+        size: int,
+        max_position: int,
+        gamma: float = 1e-5,
+        horizon_s: float = 60.0,
+        k: float = 1.0,
+        vol_window_s: int = 60,
+    ):
+        """
+        The model, with everything measured in ticks, seconds and order-sizes:
+
+            reservation  r      = mid - q * gamma * sigma^2 * horizon
+            spread       delta  = gamma * sigma^2 * horizon + (2 / gamma) * ln(1 + gamma / k)
+            quotes              = r - delta / 2  and  r + delta / 2
+
+        q:        position in order-sizes (+2 = long two orders' worth)
+        sigma^2:  variance of the mid's per-second change (ticks^2), measured
+                  over the last `vol_window_s` seconds. BTC's is large (its mid
+                  moves ~$1/s, i.e. ~100 ticks), which is why gamma is tiny.
+        gamma:    risk aversion; higher shifts quotes harder against the position
+        horizon:  how far ahead (seconds) the model worries about inventory
+        k:        how quickly fills fall off as quotes move away from the mid;
+                  higher means a tighter spread
+        """
+        super().__init__(size)
+        self.max_position = max_position
+        self.gamma = gamma
+        self.horizon_s = horizon_s
+        self.k = k
+        self.mids = deque(maxlen=vol_window_s + 1)
+
+    def variance(self) -> float | None:
+        if len(self.mids) < 10:
+            return None
+        changes = [b - a for a, b in zip(self.mids, list(self.mids)[1:])]
+        mean = sum(changes) / len(changes)
+        return sum((c - mean) ** 2 for c in changes) / (len(changes) - 1)
+
+    def targets(self, bt: lobster.Backtest) -> dict:
+        bid, ask = bt.best_bid(), bt.best_ask()
+        if not (bid and ask):
+            return {"buy": None, "sell": None}
+        mid = (bid[0] + ask[0]) / 2
+        self.mids.append(mid)  # on_tick runs once per second, so one sample per second
+        sigma2 = self.variance()
+        if sigma2 is None:
+            return {"buy": None, "sell": None}  # Not enough history to quote yet
+
+        q = bt.position / self.size
+        risk = self.gamma * sigma2 * self.horizon_s
+        reservation = mid - q * risk
+        half_spread = (risk + (2 / self.gamma) * math.log(1 + self.gamma / self.k)) / 2
+
+        # Never cross the book: at best join the best bid / ask
+        buy = min(math.floor(reservation - half_spread), bid[0])
+        sell = max(math.ceil(reservation + half_spread), ask[0])
+        if bt.position >= self.max_position:
+            buy = None
+        if bt.position <= -self.max_position:
+            sell = None
+        return {"buy": buy, "sell": sell}
 
