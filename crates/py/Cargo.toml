@@ -1,0 +1,17 @@
+[package]
+name = "lobster-py"
+version = "0.1.0"
+description = "Python bindings for the lobster-exchange matching engine"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+# The Python module name: `import lobster`. Must match the #[pymodule] name.
+name = "lobster"
+# A C-compatible shared library, the format Python loads extensions from
+crate-type = ["cdylib"]
+
+[dependencies]
+lobster-engine = { path = "../engine" }
+pyo3 = "0.30.1"

@@ -3,7 +3,10 @@
 # engine and add crates (replay, python bindings, server) as we go.
 [workspace]
 resolver = "2"
-members = ["crates/engine", "crates/recorder", "crates/replay"]
+members = ["crates/engine", "crates/recorder", "crates/replay", "crates/py"]
+# Plain `cargo build` / `cargo test` skip the Python bindings: they're built
+# by maturin, which knows how to link them against Python.
+default-members = ["crates/engine", "crates/recorder", "crates/replay"]
 
 [workspace.package]
 edition = "2024"
