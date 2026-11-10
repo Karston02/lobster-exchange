@@ -11,7 +11,7 @@ Side = Literal["buy", "sell"]
 class Event:
     """Something that happened as a result of a command."""
 
-    kind: Literal["accepted", "trade", "cancelled", "rejected"]
+    kind: Literal["accepted", "trade", "cancelled", "reduced", "rejected"]
     """Which kind of event this is; the other fields depend on it."""
     order_id: Optional[int]
     """The order this is about (accepted, cancelled, rejected)."""
@@ -24,7 +24,7 @@ class Event:
     quantity: Optional[int]
     """Trades only: the amount traded, in lots."""
     remaining: Optional[int]
-    """Cancels only: how much was still unfilled."""
+    """Cancels and reductions: how much is (or was) still unfilled."""
     reason: Optional[str]
     """Cancels: "requested" or "no_liquidity". Rejections: "zero_quantity",
     "zero_price", "duplicate_order_id" or "unknown_order_id"."""
@@ -42,6 +42,8 @@ class Engine:
         """Immediate-or-cancel: trade now at `price` or better; cancel the rest."""
     def cancel(self, id: int) -> list[Event]:
         """Remove a resting order."""
+    def reduce(self, id: int, by: int) -> list[Event]:
+        """Shrink a resting order by `by`, keeping its place in line."""
     def best_bid(self) -> Optional[int]: ...
     def best_ask(self) -> Optional[int]: ...
     def spread(self) -> Optional[int]: ...
