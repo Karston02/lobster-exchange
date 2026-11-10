@@ -7,6 +7,7 @@ import {
   ColorType,
   createChart,
   HistogramSeries,
+  TickMarkType,
   type MouseEventParams,
   type Time,
   type UTCTimestamp,
@@ -32,10 +33,41 @@ export interface CandleChart {
   destroy(): void;
 }
 
-/** The chart shows times in UTC, so shift each one by your time zone's offset at that moment. */
-function chartTime(unixSeconds: number): UTCTimestamp {
-  const offsetMinutes = new Date(unixSeconds * 1000).getTimezoneOffset();
-  return (unixSeconds - offsetMinutes * 60) as UTCTimestamp;
+// Times stay real UTC timestamps; only their labels are written in a time zone.
+// (Shifting the timestamps themselves breaks on the night daylight saving ends:
+// 1:00 to 2:00 AM happens twice, two hourly candles land on the same time, and
+// the chart refuses the data.)
+//
+// Intraday bars are labelled in your time zone. Daily and weekly bars are
+// labelled by their UTC date: Coinbase days start at 00:00 UTC and Schwab's at
+// midnight Central (05:00 or 06:00 UTC), so the UTC date is right for both.
+function labels(intraday: boolean) {
+  const timeZone = intraday ? undefined : "UTC";
+  const format = (options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(undefined, { ...options, timeZone });
+  const year = format({ year: "numeric" });
+  const month = format({ month: "short" });
+  const day = format({ day: "numeric" });
+  const clock = format({ hour: "numeric", minute: "2-digit" });
+  const crosshair = intraday
+    ? format({ weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+    : format({ weekday: "short", year: "numeric", month: "short", day: "numeric" });
+  const date = (time: Time) => new Date((time as number) * 1000);
+
+  return {
+    tick(time: Time, type: TickMarkType): string {
+      switch (type) {
+        case TickMarkType.Year:
+          return year.format(date(time));
+        case TickMarkType.Month:
+          return month.format(date(time));
+        case TickMarkType.DayOfMonth:
+          return day.format(date(time));
+        default:
+          return clock.format(date(time));
+      }
+    },
+    crosshair: (time: Time) => crosshair.format(date(time)),
+  };
 }
 
 /** Draws candles with volume underneath into `container`, sized to fill it.
@@ -79,13 +111,18 @@ export function createCandleChart(container: HTMLElement, onHover: (bar: Bar | n
 
   return {
     setBars(bars, intraday, decimals) {
-      byTime = new Map(bars.map((b) => [chartTime(b.time), b]));
-      chart.applyOptions({ timeScale: { timeVisible: intraday } });
+      byTime = new Map(bars.map((b) => [b.time, b]));
+      const label = labels(intraday);
+      chart.applyOptions({
+        timeScale: { timeVisible: intraday, tickMarkFormatter: label.tick },
+        localization: { timeFormatter: label.crosshair },
+      });
       candles.applyOptions({ priceFormat: { type: "price", precision: decimals, minMove: 10 ** -decimals } });
-      candles.setData(bars.map((b) => ({ time: chartTime(b.time), open: b.open, high: b.high, low: b.low, close: b.close })));
+      const time = (b: Bar) => b.time as UTCTimestamp;
+      candles.setData(bars.map((b) => ({ time: time(b), open: b.open, high: b.high, low: b.low, close: b.close })));
       volume.setData(
         bars.map((b) => ({
-          time: chartTime(b.time),
+          time: time(b),
           value: b.volume,
           color: b.close >= b.open ? THEME.upVolume : THEME.downVolume,
         })),

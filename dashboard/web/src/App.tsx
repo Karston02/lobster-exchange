@@ -1,3 +1,4 @@
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { usePath } from "./router";
 import { pageFor } from "./routes";
 import { TopBar } from "./shell/TopBar";
@@ -9,7 +10,10 @@ export default function App() {
   return (
     <>
       <TopBar path={path} />
-      <Page />
+      {/* keyed by path: going to another page clears an error */}
+      <ErrorBoundary key={path}>
+        <Page />
+      </ErrorBoundary>
     </>
   );
 }
