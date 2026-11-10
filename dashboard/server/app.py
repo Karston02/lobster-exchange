@@ -1,12 +1,16 @@
-"""The dashboard's web server: lists recordings and strategies, and streams a
-replay over a websocket.
+"""The Lobster server: your Schwab account, connection status, and the order
+book replay.
 
-Run from the repo root with the venv active (uv pip install fastapi "uvicorn[standard]"):
+Run from the repo root with the venv active:
 
+    uv pip install fastapi "uvicorn[standard]" schwab-py
     python dashboard/server/app.py
 
-Then start the web page (see dashboard/README.md). The server listens on
+Then start the web page (see dashboard/README.md). It listens on
 LOBSTER_HOST:LOBSTER_PORT (http://127.0.0.1:8000 by default).
+
+Routes: /api/status, /api/account and /api/orders (Schwab, see account/),
+/api/recordings, /api/strategies and /ws/replay.
 
 The websocket at /ws/replay takes its settings as query parameters, then
 sends a "hello" message, one "tick" message per second of market time, and
@@ -17,14 +21,16 @@ a "done" message at the end. The page can send {"type": "pause"},
 import asyncio
 import sys
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
 # The settings package lives at the repo root
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from account import SchwabService, SchwabUnavailable  # noqa: E402
 from config import get_settings  # noqa: E402
 from db import open_database  # noqa: E402
 from session import STRATEGIES, Session, list_recordings  # noqa: E402
@@ -32,9 +38,13 @@ from session import STRATEGIES, Session, list_recordings  # noqa: E402
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """Runs once at startup: creates the database or brings its tables up to date."""
-    open_database(get_settings().db_path).close()
+    """Startup: bring the database up to date and get the Schwab service ready.
+    Shutdown: close the Schwab connection."""
+    settings = get_settings()
+    open_database(settings.db_path).close()
+    app.state.schwab = SchwabService(settings.schwab)
     yield
+    await app.state.schwab.close()
 
 
 app = FastAPI(title="lobster", lifespan=lifespan)
@@ -42,16 +52,34 @@ app = FastAPI(title="lobster", lifespan=lifespan)
 MAX_SPEED = 500.0
 
 
+def schwab() -> SchwabService:
+    return app.state.schwab
+
+
 @app.get("/api/status")
-def status() -> dict:
-    """Yes/no facts for the top bar's connection status. Never secrets or paths."""
-    schwab = get_settings().schwab
-    return {
-        "schwab": {
-            "credentials": schwab.api_key is not None and schwab.app_secret is not None,
-            "token_saved": schwab.token_path.exists(),
-        }
-    }
+async def status() -> dict:
+    """Facts for the top bar's connection status. Never keys, tokens or full account numbers."""
+    return {"schwab": await schwab().status()}
+
+
+@app.get("/api/account")
+async def account() -> dict:
+    """Every linked account: balances and positions, money in integer cents."""
+    try:
+        accounts = await schwab().accounts()
+    except SchwabUnavailable as error:
+        raise HTTPException(503, {"reason": error.reason, "message": error.message}) from None
+    return {"accounts": [asdict(a) for a in accounts]}
+
+
+@app.get("/api/orders")
+async def orders() -> dict:
+    """Orders still waiting to fill, plus any entered in the last day."""
+    try:
+        recent = await schwab().orders()
+    except SchwabUnavailable as error:
+        raise HTTPException(503, {"reason": error.reason, "message": error.message}) from None
+    return {"orders": [asdict(o) for o in recent]}
 
 
 @app.get("/api/recordings")
