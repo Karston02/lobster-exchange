@@ -6,3 +6,11 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "engine"
+# Criterion provides its own main(), so turn off the built-in test harness
+harness = false
