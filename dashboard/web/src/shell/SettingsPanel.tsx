@@ -1,3 +1,4 @@
+import { timeLeft } from "./connection";
 import type { StatusState } from "./useServerStatus";
 
 interface Props {
@@ -5,7 +6,8 @@ interface Props {
   state: StatusState;
 }
 
-const yesNo = (value: boolean, yes: string, no: string) => (value ? yes : no);
+const dateTime = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 /** Account connections, opened from the status in the top bar. */
 export function SettingsPanel({ id, state }: Props) {
@@ -18,21 +20,30 @@ export function SettingsPanel({ id, state }: Props) {
       <dl>
         <dt>Lobster server</dt>
         <dd>{online ? "Running" : state.kind === "loading" ? "Checking…" : "Not reachable"}</dd>
-        <dt>Schwab keys</dt>
-        <dd>{schwab ? yesNo(schwab.credentials, "Set", "Missing") : "—"}</dd>
-        <dt>Schwab login</dt>
-        <dd>{schwab ? yesNo(schwab.token_saved, "Token saved", "Not logged in") : "—"}</dd>
+        <dt>Schwab</dt>
+        <dd>{schwab ? (schwab.connected ? "Connected" : "Not connected") : "—"}</dd>
+        {schwab && schwab.accounts.length > 0 && (
+          <>
+            <dt>Accounts</dt>
+            <dd className="num">{schwab.accounts.join(", ")}</dd>
+          </>
+        )}
+        {schwab?.login_expires_at && (
+          <>
+            <dt>Login ends</dt>
+            <dd>
+              {dateTime(schwab.login_expires_at)}
+              {schwab.connected && <span className="quiet"> · {timeLeft(schwab.login_expires_at)}</span>}
+            </dd>
+          </>
+        )}
       </dl>
       {state.kind === "offline" && (
         <p className="hint">
           Start it with <code>python dashboard/server/app.py</code>.
         </p>
       )}
-      {schwab && !schwab.credentials && (
-        <p className="hint">
-          Copy <code>.env.example</code> to <code>.env</code> and add your Schwab keys.
-        </p>
-      )}
+      {schwab?.message && <p className="hint">{schwab.message}</p>}
     </div>
   );
 }

@@ -1,10 +1,18 @@
 import { useEffect, useState } from "react";
 
-/** What GET /api/status reports. Never contains secrets, only yes/no facts. */
+/** Why Schwab can't be reached, as the server explains it. */
+export type SchwabProblem = "no_credentials" | "not_logged_in" | "login_expired" | "error";
+
+/** What GET /api/status reports. Facts only: never keys, tokens or full account numbers. */
 export interface ServerStatus {
   schwab: {
     credentials: boolean; // SCHWAB_API_KEY and SCHWAB_APP_SECRET are set
-    token_saved: boolean; // a login token file exists (it may still be expired)
+    token_saved: boolean; // a login token file exists
+    login_expires_at: string | null; // ISO time; Schwab logins last 7 days
+    connected: boolean; // the last account request worked
+    problem: SchwabProblem | null;
+    message: string | null; // what to do about the problem
+    accounts: string[]; // masked, e.g. "…1234"
   };
 }
 
