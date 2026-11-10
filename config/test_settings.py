@@ -91,3 +91,16 @@ def test_refuses_to_listen_beyond_this_machine():
 def test_rejects_bad_ports(port):
     with pytest.raises(SettingError):
         load({"LOBSTER_PORT": port})
+
+
+def test_account_names_map_last_four_digits_to_names():
+    settings = load({"LOBSTER_ACCOUNT_NAMES": "4428=Roth IRA, *=Schwab Cash"})
+
+    assert settings.account_names == {"4428": "Roth IRA", "*": "Schwab Cash"}
+    assert load().account_names == {}
+
+
+@pytest.mark.parametrize("text", ["Roth IRA", "44=Roth", "4428=", "abcd=Roth"])
+def test_rejects_badly_written_account_names(text):
+    with pytest.raises(SettingError):
+        load({"LOBSTER_ACCOUNT_NAMES": text})
