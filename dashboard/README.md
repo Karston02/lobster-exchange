@@ -32,7 +32,8 @@ Backtests, pick a recording and a strategy, and press Start. Speed is market sec
 
 ## Layout
 
-- `server/app.py`: FastAPI routes: `/api/status` (yes/no connection facts for the top bar), `/api/recordings`, `/api/strategies`, and the `/ws/replay` websocket. Host and port come from the settings (`config/`).
+- `server/app.py`: FastAPI routes: `/api/status` (connection facts for the top bar), `/api/account` and `/api/orders` (Schwab), `/api/recordings`, `/api/strategies`, and the `/ws/replay` websocket. Host and port come from the settings (`config/`).
+- `server/account/`: your Schwab account on the server. `service.py` (one client from the saved token, 10-second cache, clear `SchwabUnavailable` reasons), `parse.py` (Schwab JSON to records, money in integer cents, account numbers masked to the last four), `token.py` (login age from the token file). Tests use a fake client.
 - `server/db/`: the SQLite database. `connect`, `transaction`, and `migrate`, which applies the numbered `.sql` files in `db/migrations/` once each, at server start. The file lives at LOBSTER_DB_PATH (`~/.lobster/lobster.db` by default). Tests: `pytest dashboard/server/db`.
 - `server/session.py`: one replay (backtest + strategy), advanced a tick at a time. No networking.
 - `web/src/App.tsx`: the shell: top bar, then the page the URL names.

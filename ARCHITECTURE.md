@@ -196,6 +196,16 @@ _Why plain SQL migrations, not an ORM with Alembic:_ the schema stays readable S
 _Guards:_ each applied migration's checksum is stored, so editing one after the fact is refused (add a new one instead). A database with migrations the code doesn't know (made by newer code) is refused too.
 _Settings:_ WAL mode (reading doesn't wait for a write in progress), foreign keys on (SQLite's default is off), and autocommit with an explicit `transaction()` helper, so what's saved together is visible in the code.
 
+### 21. The Schwab account service
+
+`dashboard/server/account/` is the only place the server talks to Schwab about your account. Routes: `/api/account` (balances and positions per account), `/api/orders` (open orders, plus the last day's), and `/api/status` (connected, login expiry, masked account numbers).
+_The server never logs in:_ it only loads the saved token (`client_from_token_file`). Logging in opens a browser and needs you, so it's a separate script, `connectors/schwab/login.py`. On an always-on server, a browser popping up would hang forever.
+_Login expiry:_ schwab-py's token file records when you last logged in (`creation_timestamp`; refreshes don't change it). Schwab ends a login after 7 days, so the server computes the end time and the top bar warns a day ahead. A 401 from Schwab also counts as "log in again".
+_Money in integer cents:_ Schwab sends dollars as floats. `cents()` converts at the boundary via `Decimal(str(x))`, the same no-floats rule as the engine. Share quantities stay as sent (fractional shares exist) because they're only displayed.
+_Account numbers:_ masked to `…1234` inside the parser, so the full number never reaches a record, a log or the browser. Error messages pass on only the HTTP status, because raw HTTP errors can contain URLs with account hashes.
+_Caching:_ one client, one Schwab call at a time (an `asyncio.Lock`), answers reused for 10 seconds. Schwab allows about 120 requests a minute; the page and the status dot together stay far below that.
+_Checked against reality:_ `connectors/schwab/account_fields.py` lists the field names Schwab really sends (no values). The first run showed that cash accounts have no `buyingPower` (the parser falls back to `cashAvailableForTrading`), that some positions have no `description`, and that times look like `2026-11-10T15:00:00+0000`. The test fixtures now mirror that shape.
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.
