@@ -108,6 +108,11 @@ _Why:_ profiling showed the index's hashing was the biggest single engine cost. 
 `lobster-recorder` writes every Coinbase message untouched, wrapped as `{"recv_ns": <our receive time>, "msg": <original>}`, one per line. Each connection gets its own file, and a missed `sequence_num` ends the connection on purpose.
 _Why:_ "record raw, parse later": if the parser has a bug, we fix it and re-parse instead of losing the data. Each new connection starts with a full book snapshot, so every file can be replayed on its own, and a file is never silently corrupted by a gap. Our receive time is kept for measuring feed latency later.
 
+### 9. Parsing Coinbase's decimal strings by hand, into the engine's integer types
+
+`lobster-replay` converts `"73232.08"` into `Price(7_323_208)` (cents) and `"0.3404195"` into `Quantity(34_041_950)` (satoshis) with `parse_fixed`, digit by digit. The number of decimal places comes from a per-product `ProductSpec` (BTC-USD: 2 for prices, 8 for sizes).
+_Why:_ going through `f64` would reintroduce the rounding errors decision #1 avoids. Parsing digits directly is exact, rejects anything more precise than the product allows, and catches overflow. The level2 book (`L2Book`, price → total size) is kept separate from the engine's per-order `OrderBook`, because level2 data has no individual orders.
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.
