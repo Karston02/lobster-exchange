@@ -241,6 +241,13 @@ _Timeframes:_ Coinbase serves 1m, 5m, 15m, 1h, 6h and 1D. 4h is built from 1h an
 _Decimals per series, not cents:_ SHIB-USD moves in $0.00000001 steps, so cents would flatten it to $0.00. Candle prices are still whole numbers (never floats), but in units of 10^-decimals, and each series says its `decimals`: Coinbase's `quote_increment` for crypto (2 for BTC-USD, 8 for SHIB-USD), 2 for stocks, 4 for stocks under $1. The chart's price axis and legend show that many places. Account money stays in cents.
 _Volume is a float:_ crypto volume is fractional (0.5 BTC). It's only displayed, never used for money.
 
+### 26. The live last candle
+
+While a chart is open, every trade of its symbol reaches the page over `/ws/ticks?symbol=` and updates the newest candle, or starts the next one.
+_Sources:_ a `TickHub` counts which symbols pages are watching and tells the sources. Stocks join the existing Schwab quote stream (no second connection). A stock tick is sent when the price changes or `TOTAL_VOLUME` grows, with the volume difference as its size, and only during the regular session, to match the regular-session candles. Crypto comes from Coinbase Advanced Trade's public `market_trades` feed, the one the Rust recorder uses, on one connection for all watched pairs. Its first message is a snapshot of recent trades that the history already contains, so only `update` trades count.
+_Which bar a trade belongs to:_ the page doesn't redo the server's alignment rules (9:30 for stock hours, UTC for crypto, the trading day for D). A trade inside the last bar's period updates it; otherwise the new bar starts a whole number of periods after the last one, which keeps whatever grid the server chose. One known gap: across a daylight-saving change, a new daily stock bar can start an hour off until the page reloads.
+_Ticks keep every trade:_ unlike account updates (newest only), a tick queue keeps up to 1,000 ticks, since each trade can set the high or low.
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.

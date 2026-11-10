@@ -6,6 +6,12 @@
   height: calc(100dvh - 57px); /* the top bar is 56px plus its hairline */
 }
 
+/* In full screen the top bar is gone, so the page takes the whole screen */
+.charts-page:fullscreen {
+  height: 100dvh;
+  background: var(--bg);
+}
+
 .chart-toolbar {
   display: flex;
   align-items: center;
@@ -55,6 +61,28 @@
 .timeframes button[aria-pressed="true"] {
   color: var(--text);
   background: var(--active);
+}
+
+.icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.full-screen {
+  margin-left: auto;
 }
 
 .chart-stage {

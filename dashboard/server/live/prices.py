@@ -13,7 +13,8 @@ from account.money import cents
 # REST quotes in account/quotes.py; the all-hours fields are the fallback.
 LAST = ("REGULAR_MARKET_LAST_PRICE", "LAST_PRICE", "MARK")
 CLOSE = ("CLOSE_PRICE",)
-FIELDS = LAST + CLOSE
+VOLUME = "TOTAL_VOLUME"  # shares traded so far today
+FIELDS = LAST + CLOSE + (VOLUME,)
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,15 @@ class LivePrices:
             if self.get(symbol) != before:
                 changed.add(symbol)
         return changed
+
+    def last_raw(self, symbol: str) -> float | None:
+        """The latest price exactly as Schwab sent it (dollars), for chart ticks."""
+        known = self._fields.get(symbol, {})
+        return next((float(known[name]) for name in LAST if name in known), None)
+
+    def volume(self, symbol: str) -> float | None:
+        value = self._fields.get(symbol, {}).get(VOLUME)
+        return None if value is None else float(value)
 
     def get(self, symbol: str) -> LivePrice | None:
         known = self._fields.get(symbol, {})

@@ -11,7 +11,8 @@ LOBSTER_HOST:LOBSTER_PORT (http://127.0.0.1:8000 by default).
 
 Routes: /api/status, /api/account, /api/portfolio, /api/quotes,
 /api/orders (Schwab, see account/), /api/candles (charts, see market/),
-/ws/live (live account updates, see live/), /api/recordings,
+/ws/live (live account updates, see live/), /ws/ticks (live trades for
+a chart), /api/recordings,
 /api/strategies and /ws/replay.
 
 The websocket at /ws/replay takes its settings as query parameters, then
@@ -37,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from account import SchwabService, SchwabUnavailable  # noqa: E402
 from config import get_settings  # noqa: E402
 from db import open_database  # noqa: E402
-from live import LiveFeed  # noqa: E402
+from live import CoinbaseTrades, LiveFeed, TickHub  # noqa: E402
 from market import TIMEFRAMES, CoinbaseMarket, SourceUnavailable, UnknownSymbol, is_crypto  # noqa: E402
 from session import STRATEGIES, Session, list_recordings  # noqa: E402
 
@@ -50,9 +51,19 @@ async def lifespan(_: FastAPI):
     open_database(settings.db_path).close()
     app.state.schwab = SchwabService(settings.schwab, account_names=settings.account_names)
     app.state.coinbase = CoinbaseMarket()
-    app.state.live = LiveFeed(app.state.schwab)
+    app.state.ticks = TickHub()
+    app.state.live = LiveFeed(app.state.schwab, on_tick=app.state.ticks.publish)
+    app.state.coinbase_trades = CoinbaseTrades(on_tick=app.state.ticks.publish)
+
+    def follow(symbols: frozenset[str]) -> None:
+        """Charts changed what they watch: stocks join the Schwab stream, crypto the Coinbase feed."""
+        app.state.live.set_extra_symbols({s for s in symbols if not is_crypto(s)})
+        app.state.coinbase_trades.set_products({s for s in symbols if is_crypto(s)})
+
+    app.state.ticks.on_change(follow)
     app.state.live.start()  # runs on the server whether or not a page is open
     yield
+    await app.state.coinbase_trades.stop()
     await app.state.live.stop()
     await app.state.coinbase.close()
     await app.state.schwab.close()
@@ -160,10 +171,36 @@ async def live(ws: WebSocket) -> None:
     await ws.accept()
     feed: LiveFeed = app.state.live
     queue = feed.subscribe()
+    try:
+        if feed.latest():
+            await ws.send_json(feed.latest())
+        await send_until_closed(ws, queue, lambda message: message)
+    finally:
+        feed.unsubscribe(queue)
+
+
+@app.websocket("/ws/ticks")
+async def ticks(ws: WebSocket, symbol: str) -> None:
+    """Each trade of one symbol, for the chart's live last candle: {symbol, time, price, volume}."""
+    symbol = symbol.strip().upper()
+    if not SYMBOL.match(symbol):
+        await ws.close(code=1008)
+        return
+    await ws.accept()
+    hub: TickHub = app.state.ticks
+    queue = hub.subscribe(symbol)
+    try:
+        await send_until_closed(ws, queue, asdict)
+    finally:
+        hub.unsubscribe(symbol, queue)
+
+
+async def send_until_closed(ws: WebSocket, queue: asyncio.Queue, encode) -> None:
+    """Sends everything that arrives on `queue` until the page goes away."""
 
     async def page_left() -> None:
-        # The page never sends anything; this returns when it closes. Without it, a closed
-        # page would only be noticed at the next update, which can be hours after the close.
+        # Pages never send anything; this returns when one closes. Without it, a closed
+        # page would only be noticed at the next message, which can be hours later.
         try:
             while True:
                 await ws.receive_text()
@@ -172,20 +209,17 @@ async def live(ws: WebSocket) -> None:
 
     gone = asyncio.create_task(page_left())
     try:
-        if feed.latest():
-            await ws.send_json(feed.latest())
         while True:
-            update = asyncio.create_task(queue.get())
-            await asyncio.wait({update, gone}, return_when=asyncio.FIRST_COMPLETED)
+            item = asyncio.create_task(queue.get())
+            await asyncio.wait({item, gone}, return_when=asyncio.FIRST_COMPLETED)
             if gone.done():
-                update.cancel()
-                break
-            await ws.send_json(update.result())
+                item.cancel()
+                return
+            await ws.send_json(encode(item.result()))
     except (WebSocketDisconnect, RuntimeError):
         pass  # closed mid-send
     finally:
         gone.cancel()
-        feed.unsubscribe(queue)
 
 
 @app.websocket("/ws/replay")

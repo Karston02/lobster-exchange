@@ -1,7 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type RefObject } from "react";
 import { TIMEFRAMES, type Timeframe } from "./bars";
+import { FullScreenButton } from "./FullScreenButton";
 
 interface Props {
+  fullScreenTarget: RefObject<HTMLElement | null>;
   symbol: string;
   timeframe: Timeframe;
   onSymbol: (symbol: string) => void;
@@ -18,8 +20,8 @@ const TIMEFRAME_NAMES: Record<Timeframe, string> = {
   W: "1 week",
 };
 
-/** The top toolbar: symbol box and timeframe buttons. */
-export function Toolbar({ symbol, timeframe, onSymbol, onTimeframe }: Props) {
+/** The top toolbar: symbol box, timeframe buttons, and full screen on the right. */
+export function Toolbar({ fullScreenTarget, symbol, timeframe, onSymbol, onTimeframe }: Props) {
   const [typed, setTyped] = useState(symbol);
   useEffect(() => setTyped(symbol), [symbol]);
 
@@ -60,6 +62,7 @@ export function Toolbar({ symbol, timeframe, onSymbol, onTimeframe }: Props) {
           </button>
         ))}
       </div>
+      <FullScreenButton target={fullScreenTarget} />
     </div>
   );
 }

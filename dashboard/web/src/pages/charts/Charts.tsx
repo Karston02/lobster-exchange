@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { navigate, useSearchParams } from "../../router";
 import { isIntraday, TIMEFRAMES, type Timeframe } from "./bars";
 import { CandleChart } from "./CandleChart";
@@ -17,19 +18,27 @@ export function Charts() {
   const tfParam = params.get("tf");
   const timeframe = TIMEFRAMES.find((tf) => tf === tfParam) ?? DEFAULT_TIMEFRAME;
   const { bars, decimals, loading, error } = useCandles(symbol, timeframe);
+  const page = useRef<HTMLElement>(null);
 
   const go = (s: string, tf: Timeframe) => navigate(`/charts?symbol=${encodeURIComponent(s)}&tf=${tf}`);
 
   return (
-    <main className="charts-page">
+    <main className="charts-page" ref={page}>
       <Toolbar
+        fullScreenTarget={page}
         symbol={symbol}
         timeframe={timeframe}
         onSymbol={(s) => go(s, timeframe)}
         onTimeframe={(tf) => go(symbol, tf)}
       />
       <div className="chart-stage">
-        <CandleChart symbol={symbol} bars={bars} intraday={isIntraday(timeframe)} decimals={decimals} />
+        <CandleChart
+          symbol={symbol}
+          timeframe={timeframe}
+          bars={bars}
+          intraday={isIntraday(timeframe)}
+          decimals={decimals}
+        />
         {loading && <p className="chart-note quiet">Loading {symbol}…</p>}
         {!loading && error && <p className="chart-note quiet">{error.message}</p>}
         {!loading && !error && bars.length === 0 && <p className="chart-note quiet">No candles for {symbol}.</p>}

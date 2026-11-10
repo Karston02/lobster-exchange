@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 EXCHANGE_TZ = ZoneInfo("America/New_York")
 SESSION_OPEN = time(9, 30)
+SESSION_CLOSE = time(16, 0)
 
 
 @dataclass(frozen=True)
@@ -42,3 +43,9 @@ def session_bucket(period_s: int):
         return int(open_.timestamp()) + (offset // period_s) * period_s
 
     return bucket
+
+
+def in_regular_session(t: float) -> bool:
+    """Monday to Friday, 9:30 AM to 4:00 PM Eastern. (Holidays aren't known; nothing trades then anyway.)"""
+    local = datetime.fromtimestamp(t, EXCHANGE_TZ)
+    return local.weekday() < 5 and SESSION_OPEN <= local.time() < SESSION_CLOSE

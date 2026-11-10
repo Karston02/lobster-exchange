@@ -2,7 +2,8 @@
 
 Three loops share the work:
 - refresh: every minute, reload accounts from Schwab (catches trades, cash,
-  new positions) and work out which symbols to stream;
+  new positions) and work out which symbols to stream: held stocks, SPY, and
+  any stock a chart is watching (`set_extra_symbols`);
 - stream: keep one Schwab quote stream open for those symbols, reconnecting
   with growing waits if it drops; a change of symbols reconnects too;
 - publish: at most once a second, if anything changed, reprice the accounts
@@ -12,6 +13,7 @@ Three loops share the work:
 import asyncio
 import dataclasses
 import logging
+import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
@@ -21,8 +23,11 @@ from account.models import Account
 from account.portfolio import summarize
 from account.quotes import Quote
 
+from market.timeframes import in_regular_session
+
 from .prices import LivePrices
 from .revalue import live_quote, revalue
+from .ticks import Tick
 
 log = logging.getLogger("lobster.live")
 
@@ -44,15 +49,19 @@ class LiveFeed:
         stream_factory: Callable[[Any, int], Any] = _schwab_stream,
         publish_every_s: float = 1.0,
         refresh_every_s: float = 60.0,
+        on_tick: Callable[[Tick], None] | None = None,
     ):
         self._schwab = schwab
         self._stream_factory = stream_factory
         self._publish_every_s = publish_every_s
         self._refresh_every_s = refresh_every_s
+        self._on_tick = on_tick
 
         self._prices = LivePrices()
         self._accounts: list[Account] | None = None
         self._benchmark: Quote | None = None  # SPY from REST, until the stream has it
+        self._held: frozenset[str] = frozenset()
+        self._extra: frozenset[str] = frozenset()  # stocks charts are watching
         self._symbols: frozenset[str] = frozenset()
         self._symbols_changed = asyncio.Event()
         self._have_symbols = asyncio.Event()
@@ -107,14 +116,22 @@ class LiveFeed:
             self._benchmark = (await self._schwab.quotes([BENCHMARK])).get(BENCHMARK)
         except SchwabUnavailable:
             pass  # Home simply shows no SPY until it's back
-        symbols = frozenset(
-            p.symbol for a in self._accounts for p in a.positions if p.asset_type != "OPTION"
-        ) | {BENCHMARK}
+        self._held = frozenset(p.symbol for a in self._accounts for p in a.positions if p.asset_type != "OPTION")
+        self._update_symbols()
+        self._dirty = True
+
+    def set_extra_symbols(self, symbols: set[str] | frozenset[str]) -> None:
+        """Also stream these stocks (the ones charts are open on)."""
+        self._extra = frozenset(symbols)
+        self._update_symbols()
+
+    def _update_symbols(self) -> None:
+        symbols = self._held | self._extra | {BENCHMARK}
         if symbols != self._symbols:
             self._symbols = symbols
             self._symbols_changed.set()
-        self._have_symbols.set()
-        self._dirty = True
+        if self._accounts is not None or self._extra:
+            self._have_symbols.set()
 
     # --- stream: one Schwab connection ---
 
@@ -170,8 +187,26 @@ class LiveFeed:
                 pass  # the connection may already be gone
 
     def _on_quotes(self, message: dict) -> None:
-        if self._prices.apply(message.get("content", [])):
+        content = message.get("content", [])
+        keys = [item.get("key") for item in content if item.get("key")]
+        before = {k: (self._prices.last_raw(k), self._prices.volume(k)) for k in keys}
+        if self._prices.apply(content):
             self._dirty = True
+        if self._on_tick:
+            self._send_ticks(before)
+
+    def _send_ticks(self, before: dict[str, tuple[float | None, float | None]]) -> None:
+        """A tick for each symbol that traded: a new price, or more volume at the same price.
+        Only during the regular session, to match the regular-session candles."""
+        now = time.time()
+        if not in_regular_session(now):
+            return
+        for symbol, (old_price, old_volume) in before.items():
+            price, volume = self._prices.last_raw(symbol), self._prices.volume(symbol)
+            # The first message carries the whole day's volume; only later increases are new trades
+            traded = volume - old_volume if volume is not None and old_volume is not None else 0.0
+            if price is not None and (price != old_price or traded > 0):
+                self._on_tick(Tick(symbol=symbol, time=now, price=price, volume=max(traded, 0.0)))
 
     # --- publish: reprice and send ---
 

@@ -6,6 +6,7 @@ import {
   CandlestickSeries,
   ColorType,
   createChart,
+  CrosshairMode,
   HistogramSeries,
   TickMarkType,
   type MouseEventParams,
@@ -24,12 +25,23 @@ const THEME = {
   down: "#ff8f6b",
   upVolume: "rgba(79, 209, 161, 0.25)",
   downVolume: "rgba(255, 143, 107, 0.25)",
+  crosshair: "#6b7585",
+  label: "#1b2330", // background of the price and time tags on the axes
 };
 
 const BARS_IN_VIEW = 150; // how many recent bars to show at first
 
+const candlePoint = (b: Bar) => ({ time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close });
+const volumePoint = (b: Bar) => ({
+  time: b.time as UTCTimestamp,
+  value: b.volume,
+  color: b.close >= b.open ? THEME.upVolume : THEME.downVolume,
+});
+
 export interface CandleChart {
   setBars(bars: Bar[], intraday: boolean, decimals: number): void;
+  /** Updates the last bar, or adds one after it (from a live trade). */
+  updateBar(bar: Bar): void;
   destroy(): void;
 }
 
@@ -83,6 +95,12 @@ export function createCandleChart(container: HTMLElement, onHover: (bar: Bar | n
     grid: { vertLines: { color: THEME.grid }, horzLines: { color: THEME.grid } },
     rightPriceScale: { borderColor: THEME.line },
     timeScale: { borderColor: THEME.line, secondsVisible: false },
+    // Free-moving crosshair (Magnet, the default, snaps to closes), with tags on both axes
+    crosshair: {
+      mode: CrosshairMode.Normal,
+      vertLine: { color: THEME.crosshair, labelBackgroundColor: THEME.label },
+      horzLine: { color: THEME.crosshair, labelBackgroundColor: THEME.label },
+    },
   });
 
   const candles = chart.addSeries(CandlestickSeries, {
@@ -118,17 +136,15 @@ export function createCandleChart(container: HTMLElement, onHover: (bar: Bar | n
         localization: { timeFormatter: label.crosshair },
       });
       candles.applyOptions({ priceFormat: { type: "price", precision: decimals, minMove: 10 ** -decimals } });
-      const time = (b: Bar) => b.time as UTCTimestamp;
-      candles.setData(bars.map((b) => ({ time: time(b), open: b.open, high: b.high, low: b.low, close: b.close })));
-      volume.setData(
-        bars.map((b) => ({
-          time: time(b),
-          value: b.volume,
-          color: b.close >= b.open ? THEME.upVolume : THEME.downVolume,
-        })),
-      );
+      candles.setData(bars.map(candlePoint));
+      volume.setData(bars.map(volumePoint));
       const n = bars.length;
       chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - BARS_IN_VIEW), to: n + 3 });
+    },
+    updateBar(bar) {
+      byTime.set(bar.time, bar);
+      candles.update(candlePoint(bar));
+      volume.update(volumePoint(bar));
     },
     destroy() {
       chart.unsubscribeCrosshairMove(hover);
