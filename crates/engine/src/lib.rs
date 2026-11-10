@@ -5,10 +5,10 @@
 //!
 //! Start with [`Engine`]: send it [`Command`]s and it returns [`Event`]s.
 
-pub mod book;
-pub mod engine;
-pub mod messages;
-pub mod types;
+mod book;
+mod engine;
+mod messages;
+mod types;
 
 pub use book::OrderBook;
 pub use engine::Engine;

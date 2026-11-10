@@ -32,12 +32,27 @@ impl OrderBook {
     /// This does not check for matches; use [`OrderBook::submit`] for that.
     fn rest(&mut self, order: Order) {
         self.index.insert(order.id, (order.side, order.price));
-        let levels = match order.side {
+        // Find the queue for this price (creating it if needed) and join the back of the line.
+        self.levels_mut(order.side)
+            .entry(order.price)
+            .or_default()
+            .push_back(order);
+    }
+
+    /// Returns one side of the book (bids for `Buy`, asks for `Sell`).
+    fn levels(&self, side: Side) -> &Levels {
+        match side {
+            Side::Buy => &self.bids,
+            Side::Sell => &self.asks,
+        }
+    }
+
+    /// Mutable version of [`OrderBook::levels`].
+    fn levels_mut(&mut self, side: Side) -> &mut Levels {
+        match side {
             Side::Buy => &mut self.bids,
             Side::Sell => &mut self.asks,
-        };
-        // Find the queue for this price (creating it if needed) and join the back of the line.
-        levels.entry(order.price).or_default().push_back(order);
+        }
     }
 
     /// Submits a new limit order and returns the trades it produced.
@@ -87,7 +102,12 @@ impl OrderBook {
     ) -> Vec<Trade> {
         let mut trades = Vec::new();
 
-        // A buy trades against asks, a sell trades against bids
+        /*
+         * A buy trades against asks, a sell trades against bids.
+         * This borrows the field directly instead of calling `levels_mut`:
+         * a method call would borrow all of `self`, and then the loop below
+         * couldn't also update `self.index`. Borrowing two separate fields is fine.
+         */
         let opposite = match side {
             Side::Buy => &mut self.asks,
             Side::Sell => &mut self.bids,
@@ -108,11 +128,7 @@ impl OrderBook {
 
             // Stop if the best price is past our limit (market orders have none)
             let level_price = *level.key();
-            let within_limit = match (side, limit) {
-                (_, None) => true,
-                (Side::Buy, Some(limit)) => level_price <= limit,
-                (Side::Sell, Some(limit)) => level_price >= limit,
-            };
+            let within_limit = limit.is_none_or(|limit| side.crosses(limit, level_price));
             if !within_limit {
                 break;
             }
@@ -159,10 +175,7 @@ impl OrderBook {
     pub(crate) fn cancel(&mut self, id: OrderId) -> Option<Order> {
         // Look up where the order lives instead of searching every price level.
         let (side, price) = self.index.remove(&id)?;
-        let levels = match side {
-            Side::Buy => &mut self.bids,
-            Side::Sell => &mut self.asks,
-        };
+        let levels = self.levels_mut(side);
         let queue = levels.get_mut(&price)?;
 
         // Find the order's place in line. This only scans one price level.
@@ -207,11 +220,8 @@ impl OrderBook {
 
     /// Returns the total quantity waiting at one price on one side (0 if nothing is there).
     pub fn quantity_at(&self, side: Side, price: Price) -> Quantity {
-        let levels = match side {
-            Side::Buy => &self.bids,
-            Side::Sell => &self.asks,
-        };
-        let total = levels
+        let total = self
+            .levels(side)
             .get(&price)
             .map(|queue| queue.iter().map(|order| order.quantity.0).sum())
             .unwrap_or(0);
@@ -220,11 +230,7 @@ impl OrderBook {
 
     /// Returns the orders waiting at one price, front of the line first.
     pub fn orders_at(&self, side: Side, price: Price) -> Vec<&Order> {
-        let levels = match side {
-            Side::Buy => &self.bids,
-            Side::Sell => &self.asks,
-        };
-        levels
+        self.levels(side)
             .get(&price)
             .map(|queue| queue.iter().collect())
             .unwrap_or_default()
@@ -451,6 +457,35 @@ mod tests {
         let cancelled = book.cancel(OrderId(2)).unwrap();
         assert_eq!(cancelled.quantity, Quantity(6));
         assert_eq!(book.best_bid(), None);
+    }
+
+    #[test]
+    fn sell_walks_down_through_several_price_levels() {
+        let mut book = OrderBook::new();
+        book.submit(order(1, Side::Buy, 100, 5));
+        book.submit(order(2, Side::Buy, 99, 5));
+        book.submit(order(3, Side::Buy, 98, 5));
+        let trades = book.submit(order(4, Side::Sell, 99, 12));
+
+        // Takes all of 100 and 99, but 98 is below our limit
+        assert_eq!(summary(&trades), vec![(1, 4, 100, 5), (2, 4, 99, 5)]);
+        assert_eq!(book.best_ask(), Some(Price(99))); // Leftover 2 rests
+        assert_eq!(book.quantity_at(Side::Sell, Price(99)), Quantity(2));
+        assert_eq!(book.best_bid(), Some(Price(98)));
+    }
+
+    #[test]
+    fn index_stays_in_sync_after_a_sweep() {
+        let mut book = OrderBook::new();
+        for id in 1..=5 {
+            book.submit(order(id, Side::Sell, 100 + id, 1));
+        }
+        book.submit(order(6, Side::Buy, 103, 3)); // Fills orders 1, 2 and 3
+
+        assert_eq!(book.order_count(), 2);
+        assert!(!book.contains(OrderId(1)));
+        assert!(book.contains(OrderId(4)));
+        assert!(book.contains(OrderId(5)));
     }
 
     #[test]
