@@ -113,6 +113,12 @@ _Why:_ "record raw, parse later": if the parser has a bug, we fix it and re-pars
 `lobster-replay` converts `"73232.08"` into `Price(7_323_208)` (cents) and `"0.3404195"` into `Quantity(34_041_950)` (satoshis) with `parse_fixed`, digit by digit. The number of decimal places comes from a per-product `ProductSpec` (BTC-USD: 2 for prices, 8 for sizes).
 _Why:_ going through `f64` would reintroduce the rounding errors decision #1 avoids. Parsing digits directly is exact, rejects anything more precise than the product allows, and catches overflow. The level2 book (`L2Book`, price → total size) is kept separate from the engine's per-order `OrderBook`, because level2 data has no individual orders.
 
+### 10. Level2 → engine: synthetic orders, cancels taken from the back
+
+`L2Translator` (`crates/replay/src/translate.rs`) keeps a line of synthetic orders at every price in the engine so each level's total always equals Coinbase's. A level that grows gets a new order for the difference at the back of the line. A level that shrinks loses orders from the back (a partly removed order is cancelled and its remainder re-added, which keeps it last). Within a message, shrinking levels are applied before growing ones, so a price that flips from ask to bid never makes the engine trade.
+_Why:_ new orders really do join the back. Cancels can come from anywhere, and assuming "from the back" is pessimistic for a bot waiting in line: orders ahead of it never disappear, so backtests won't overstate how fast it gets filled. Trades (from `market_trades`) will consume from the front once the bot is in the loop (Phase 4); the assumption can become a setting (back / front / proportional) to compare.
+_Checked:_ on a real 15,882-message recording, the engine's book matched Coinbase's at the top after every message and at every level at the end, with zero unexpected trades or rejections (361,872 commands, 0.24 s).
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.
