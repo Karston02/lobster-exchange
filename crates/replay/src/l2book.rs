@@ -73,6 +73,15 @@ impl L2Book {
         (self.bids.len(), self.asks.len())
     }
 
+    /// Returns every level of one side, lowest price first.
+    pub fn levels(&self, side: Side) -> impl Iterator<Item = (Price, Quantity)> + '_ {
+        let levels = match side {
+            Side::Buy => &self.bids,
+            Side::Sell => &self.asks,
+        };
+        levels.iter().map(|(p, q)| (*p, *q))
+    }
+
     /// Returns the best `n` levels of one side, best first.
     pub fn top(&self, side: Side, n: usize) -> Vec<(Price, Quantity)> {
         let levels: Box<dyn Iterator<Item = (&Price, &Quantity)>> = match side {
