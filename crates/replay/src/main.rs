@@ -9,43 +9,13 @@
 //! applied (see `timeline.rs`). `--trade-lead-ms` moves trades earlier in that
 //! order, for experimenting; the default is 0.
 
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::time::Instant;
 
 use lobster_engine::{Price, Quantity, Side};
-use lobster_replay::coinbase::{BTC_USD, EventKind, Message, RecordedLine};
-use lobster_replay::decimal::parse_fixed;
-use lobster_replay::l2book::{L2Book, LevelUpdate};
-use lobster_replay::time::parse_utc_ns;
+use lobster_replay::l2book::L2Book;
+use lobster_replay::recording::{ReadProblems, Recording, read_recording};
 use lobster_replay::timeline::{Step, Timed, TradePrint, merge};
 use lobster_replay::translate::L2Translator;
-
-/// Everything read from a recording file, ready to replay.
-#[derive(Debug, Default)]
-struct Recording {
-    /// The opening snapshot: every level of the book when recording started.
-    snapshot: Vec<LevelUpdate>,
-    /// Coinbase's time for the snapshot.
-    snapshot_ns: u64,
-    levels: Vec<Timed<LevelUpdate>>,
-    trades: Vec<Timed<TradePrint>>,
-    /// Our receive times of the first and last lines.
-    first_recv_ns: Option<u64>,
-    last_recv_ns: Option<u64>,
-    lines: u64,
-}
-
-/// Problems found while reading. All should be zero.
-#[derive(Debug, Default)]
-struct ReadProblems {
-    unparsed_lines: u64,
-    bad_numbers: u64,
-    bad_times: u64,
-    sequence_gaps: u64,
-    /// More than one snapshot in a file; only the first is used
-    extra_snapshots: u64,
-}
 
 /// What happened during the replay.
 #[derive(Debug, Default)]
@@ -104,103 +74,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Reads a recording into memory, converting every number and timestamp.
-fn read_recording(path: &str, problems: &mut ReadProblems) -> std::io::Result<Recording> {
-    let mut recording = Recording::default();
-    let mut last_sequence: Option<u64> = None;
-    let mut have_snapshot = false;
-
-    for line in BufReader::new(File::open(path)?).lines() {
-        let line = line?;
-        recording.lines += 1;
-        let line_number = recording.lines;
-
-        let recorded: RecordedLine = match serde_json::from_str(&line) {
-            Ok(recorded) => recorded,
-            Err(error) => {
-                problems.unparsed_lines += 1;
-                eprintln!("line {line_number}: could not parse ({error})");
-                continue;
-            }
-        };
-        recording.first_recv_ns.get_or_insert(recorded.recv_ns);
-        recording.last_recv_ns = Some(recorded.recv_ns);
-
-        // Every message on a connection is numbered; a jump means we missed some
-        let sequence = recorded.msg.sequence_num();
-        if let Some(last) = last_sequence
-            && sequence != last + 1
-        {
-            problems.sequence_gaps += 1;
-            eprintln!("line {line_number}: sequence jumped from {last} to {sequence}");
-        }
-        last_sequence = Some(sequence);
-
-        match recorded.msg {
-            Message::L2Data(data) => {
-                for event in &data.events {
-                    let is_snapshot = event.kind == EventKind::Snapshot;
-                    if is_snapshot {
-                        if have_snapshot {
-                            problems.extra_snapshots += 1;
-                            continue;
-                        }
-                        have_snapshot = true;
-                        match parse_utc_ns(&data.timestamp) {
-                            Ok(ns) => recording.snapshot_ns = ns,
-                            Err(_) => problems.bad_times += 1,
-                        }
-                    }
-                    for raw in &event.updates {
-                        let Ok(update) = raw.to_level_update(BTC_USD) else {
-                            problems.bad_numbers += 1;
-                            continue;
-                        };
-                        if is_snapshot {
-                            recording.snapshot.push(update);
-                            continue;
-                        }
-                        match parse_utc_ns(&raw.event_time) {
-                            Ok(exchange_ns) => recording.levels.push(Timed {
-                                exchange_ns,
-                                item: update,
-                            }),
-                            Err(_) => problems.bad_times += 1,
-                        }
-                    }
-                }
-            }
-            Message::MarketTrades(trades) => {
-                // The first trades message is a snapshot of trades from before we connected
-                for event in trades.events.iter().filter(|e| e.kind == EventKind::Update) {
-                    for raw in &event.trades {
-                        let price = parse_fixed(&raw.price, BTC_USD.price_decimals);
-                        let quantity = parse_fixed(&raw.size, BTC_USD.quantity_decimals);
-                        let (Ok(price), Ok(quantity)) = (price, quantity) else {
-                            problems.bad_numbers += 1;
-                            continue;
-                        };
-                        let Ok(exchange_ns) = parse_utc_ns(&raw.time) else {
-                            problems.bad_times += 1;
-                            continue;
-                        };
-                        recording.trades.push(Timed {
-                            exchange_ns,
-                            item: TradePrint {
-                                maker_side: raw.side.into(),
-                                price: Price(price),
-                                quantity: Quantity(quantity),
-                            },
-                        });
-                    }
-                }
-            }
-            Message::Heartbeats(_) | Message::Subscriptions(_) => {}
-        }
-    }
-    Ok(recording)
-}
-
 /// Applies the snapshot, then every book change and trade in exchange-time order.
 fn replay(
     recording: &Recording,
@@ -225,7 +98,7 @@ fn replay(
     stats.skipped_early_trades = (recording.trades.len() - trades.len()) as u64;
 
     for step in merge(&recording.levels, &trades, trade_lead_ms * 1_000_000) {
-        match step {
+        match step.item {
             Step::Levels(updates) => {
                 stats.level_steps += 1;
                 for update in &updates {

@@ -5,14 +5,19 @@
 //! each price in the engine, sized so their total always equals Coinbase's:
 //!
 //! - A level grows: a new synthetic order for the difference joins the back.
-//! - A level shrinks: synthetic orders are removed from the back of the line.
-//!
+//! - A level shrinks: synthetic orders are removed from the back of the line
+//!   (or the last one is reduced, which keeps its place).
 //! - A trade happens: an immediate-or-cancel order at the trade's price takes
 //!   it from the front of the line, the way a real fill does.
 //!
-//! Removing from the back is a pessimistic assumption about cancels. When a
-//! market-making bot sits in the line later, orders ahead of it never vanish,
-//! so it only moves forward through trades. See ARCHITECTURE.md, decision #10.
+//! Other orders can share the engine: a backtested bot's orders, with ids at or
+//! above [`FIRST_BOT_ID`]. The translator never cancels those, and doesn't count
+//! them toward Coinbase's totals, since they aren't on Coinbase. Events that
+//! involve them are kept for the caller ([`L2Translator::take_outside_events`]).
+//!
+//! Removing from the back is a pessimistic assumption about cancels: orders
+//! ahead of a waiting bot never vanish, so it only moves forward through
+//! trades. See ARCHITECTURE.md, decision #10.
 
 use std::collections::HashMap;
 
@@ -21,6 +26,14 @@ use lobster_engine::{Command, Engine, Event, OrderId, Price, Quantity, Side};
 use crate::l2book::LevelUpdate;
 use crate::timeline::TradePrint;
 
+/// Ids from here up belong to orders that aren't synthetic (a bot's).
+pub const FIRST_BOT_ID: u64 = 1 << 62;
+
+/// Returns whether an id belongs to a synthetic (Coinbase-replica) order.
+pub fn is_synthetic(id: OrderId) -> bool {
+    id.0 < FIRST_BOT_ID
+}
+
 /// Keeps an engine's book in step with a level2 feed.
 #[derive(Debug)]
 pub struct L2Translator {
@@ -28,6 +41,8 @@ pub struct L2Translator {
     next_id: u64,
     commands_sent: u64,
     unexpected_events: u64,
+    /// Events involving non-synthetic orders, waiting to be collected
+    outside_events: Vec<Event>,
 }
 
 impl Default for L2Translator {
@@ -44,6 +59,7 @@ impl L2Translator {
             next_id: 1,
             commands_sent: 0,
             unexpected_events: 0,
+            outside_events: Vec::new(),
         }
     }
 
@@ -57,36 +73,23 @@ impl L2Translator {
         self.commands_sent
     }
 
-    /// Returns how many engine events were trades or rejections. Synthetic
-    /// orders should only ever rest and be cancelled, so this should be zero.
+    /// Returns how many engine events made no sense for synthetic orders
+    /// (a synthetic order trading with another synthetic one, or a rejection).
+    /// Should be zero.
     pub fn unexpected_events(&self) -> u64 {
         self.unexpected_events
     }
 
-    /// Replays one exchange trade against the front of the line.
-    ///
-    /// Sends an immediate-or-cancel order on the taker's side at the trade's
-    /// price. Returns how much of the trade the engine could not fill: zero
-    /// when our book already had the resting quantity the trade consumed.
-    pub fn apply_trade(&mut self, trade: TradePrint) -> Quantity {
-        let id = self.new_id();
-        let events = self.engine.process(Command::NewImmediateOrCancel {
-            id,
-            side: trade.maker_side.opposite(),
-            price: trade.price,
-            quantity: trade.quantity,
-        });
-        self.commands_sent += 1;
+    /// Removes and returns the events involving non-synthetic orders that the
+    /// market's own activity caused, e.g. a bot's resting order being filled.
+    pub fn take_outside_events(&mut self) -> Vec<Event> {
+        std::mem::take(&mut self.outside_events)
+    }
 
-        let mut unfilled = Quantity(0);
-        for event in events {
-            match event {
-                Event::Accepted { .. } | Event::Trade(_) => {}
-                Event::Cancelled { remaining, .. } => unfilled = remaining,
-                Event::Rejected { .. } => self.unexpected_events += 1,
-            }
-        }
-        unfilled
+    /// Sends a non-synthetic order's command (a bot's) and returns its events.
+    pub fn submit(&mut self, command: Command) -> Vec<Event> {
+        self.commands_sent += 1;
+        self.engine.process(command)
     }
 
     /// Starts over with an empty book, before applying a snapshot.
@@ -122,18 +125,48 @@ impl L2Translator {
         }
     }
 
-    /// The engine's current total at one price.
-    fn current(&self, side: Side, price: Price) -> Quantity {
-        self.engine.book().quantity_at(side, price)
+    /// Replays one exchange trade against the front of the line.
+    ///
+    /// Sends an immediate-or-cancel order on the taker's side at the trade's
+    /// price. Returns how much of the trade the engine could not fill: zero
+    /// when our book already had the resting quantity the trade consumed.
+    pub fn apply_trade(&mut self, trade: TradePrint) -> Quantity {
+        let id = self.new_id();
+        let events = self.process_synthetic(Command::NewImmediateOrCancel {
+            id,
+            side: trade.maker_side.opposite(),
+            price: trade.price,
+            quantity: trade.quantity,
+        });
+        events
+            .iter()
+            .find_map(|event| match event {
+                Event::Cancelled { remaining, .. } => Some(*remaining),
+                _ => None,
+            })
+            .unwrap_or(Quantity(0))
     }
 
-    /// Makes the engine's total at one price equal `update.quantity`.
+    /// The synthetic total at one price: Coinbase's quantity as far as we know.
+    fn current(&self, side: Side, price: Price) -> Quantity {
+        let total = self
+            .engine
+            .book()
+            .orders_at(side, price)
+            .iter()
+            .filter(|order| is_synthetic(order.id))
+            .map(|order| order.quantity.0)
+            .sum();
+        Quantity(total)
+    }
+
+    /// Makes the synthetic total at one price equal `update.quantity`.
     fn set_level(&mut self, update: LevelUpdate) {
         let current = self.current(update.side, update.price).0;
         let target = update.quantity.0;
         if target > current {
             let id = self.new_id();
-            self.process(Command::NewLimit {
+            self.process_synthetic(Command::NewLimit {
                 id,
                 side: update.side,
                 price: update.price,
@@ -144,7 +177,8 @@ impl L2Translator {
         }
     }
 
-    /// Removes `amount` from one price level, taking it from the back of the line.
+    /// Removes `amount` of synthetic quantity from one price level, taking it
+    /// from the back of the line and skipping orders that aren't synthetic.
     fn shrink(&mut self, side: Side, price: Price, mut amount: u64) {
         // Copy the line out first: we can't hold a borrow of the book while changing it
         let line: Vec<(OrderId, u64)> = self
@@ -153,6 +187,7 @@ impl L2Translator {
             .orders_at(side, price)
             .iter()
             .rev()
+            .filter(|order| is_synthetic(order.id))
             .map(|order| (order.id, order.quantity.0))
             .collect();
 
@@ -160,33 +195,42 @@ impl L2Translator {
             if amount == 0 {
                 break;
             }
-            self.process(Command::Cancel { id });
             if quantity > amount {
-                // Only part of this order goes. It was last in line, so re-adding
-                // the rest at the back keeps it in the same place.
-                let id = self.new_id();
-                self.process(Command::NewLimit {
+                // Only part of this order goes; reducing it keeps its place in line
+                self.process_synthetic(Command::Reduce {
                     id,
-                    side,
-                    price,
-                    quantity: Quantity(quantity - amount),
+                    by: Quantity(amount),
                 });
                 amount = 0;
             } else {
+                self.process_synthetic(Command::Cancel { id });
                 amount -= quantity;
             }
         }
     }
 
-    /// Sends one command to the engine and checks what came back.
-    fn process(&mut self, command: Command) {
+    /// Sends a synthetic order's command, checks the events, and keeps any
+    /// that involve outside orders for the caller.
+    fn process_synthetic(&mut self, command: Command) -> Vec<Event> {
         self.commands_sent += 1;
-        for event in self.engine.process(command) {
+        let events = self.engine.process(command);
+        for event in &events {
             match event {
-                Event::Accepted { .. } | Event::Cancelled { .. } => {}
-                Event::Trade(_) | Event::Rejected { .. } => self.unexpected_events += 1,
+                Event::Accepted { .. } | Event::Cancelled { .. } | Event::Reduced { .. } => {}
+                Event::Trade(trade) => {
+                    let maker_synthetic = is_synthetic(trade.maker_order_id);
+                    let taker_synthetic = is_synthetic(trade.taker_order_id);
+                    if !maker_synthetic || !taker_synthetic {
+                        self.outside_events.push(*event);
+                    } else if !matches!(command, Command::NewImmediateOrCancel { .. }) {
+                        // Only replayed trades should match synthetic orders with each other
+                        self.unexpected_events += 1;
+                    }
+                }
+                Event::Rejected { .. } => self.unexpected_events += 1,
             }
         }
+        events
     }
 
     fn new_id(&mut self) -> OrderId {
@@ -208,6 +252,14 @@ mod tests {
         }
     }
 
+    fn trade(maker_side: Side, price: u64, quantity: u64) -> TradePrint {
+        TradePrint {
+            maker_side,
+            price: Price(price),
+            quantity: Quantity(quantity),
+        }
+    }
+
     /// The sizes of the orders waiting at one price, front of the line first.
     fn line(translator: &L2Translator, side: Side, price: u64) -> Vec<u64> {
         translator
@@ -217,6 +269,15 @@ mod tests {
             .iter()
             .map(|order| order.quantity.0)
             .collect()
+    }
+
+    fn bot_limit(id: u64, side: Side, price: u64, quantity: u64) -> Command {
+        Command::NewLimit {
+            id: OrderId(FIRST_BOT_ID + id),
+            side,
+            price: Price(price),
+            quantity: Quantity(quantity),
+        }
     }
 
     #[test]
@@ -291,14 +352,6 @@ mod tests {
         assert_eq!(line(&translator, Side::Buy, 100), vec![2]);
     }
 
-    fn trade(maker_side: Side, price: u64, quantity: u64) -> TradePrint {
-        TradePrint {
-            maker_side,
-            price: Price(price),
-            quantity: Quantity(quantity),
-        }
-    }
-
     #[test]
     fn trade_takes_from_the_front_of_the_line() {
         let mut translator = L2Translator::new();
@@ -338,5 +391,56 @@ mod tests {
         translator.apply(&[level(Side::Buy, 100, 5)]);
         translator.reset();
         assert_eq!(translator.engine().book().order_count(), 0);
+    }
+
+    #[test]
+    fn bot_orders_are_never_cancelled_and_not_counted_as_coinbase_quantity() {
+        let mut translator = L2Translator::new();
+        translator.apply(&[level(Side::Buy, 100, 5)]);
+        translator.submit(bot_limit(1, Side::Buy, 100, 2)); // Line: [5, bot 2]
+
+        // Coinbase's level drops to 1: only synthetic quantity is removed
+        translator.apply(&[level(Side::Buy, 100, 1)]);
+        assert_eq!(line(&translator, Side::Buy, 100), vec![1, 2]);
+
+        // Coinbase's level grows to 4: the bot's 2 doesn't count toward it
+        translator.apply(&[level(Side::Buy, 100, 4)]);
+        assert_eq!(line(&translator, Side::Buy, 100), vec![1, 2, 3]);
+
+        // Even if Coinbase removes the whole level, the bot's order stays
+        translator.apply(&[level(Side::Buy, 100, 0)]);
+        assert_eq!(line(&translator, Side::Buy, 100), vec![2]);
+        assert_eq!(translator.unexpected_events(), 0);
+    }
+
+    #[test]
+    fn trades_reach_a_bot_order_only_after_the_orders_ahead_of_it() {
+        let mut translator = L2Translator::new();
+        translator.apply(&[level(Side::Sell, 101, 5)]);
+        translator.submit(bot_limit(1, Side::Sell, 101, 2)); // Line: [5, bot 2]
+
+        translator.apply_trade(trade(Side::Sell, 101, 4));
+        assert!(translator.take_outside_events().is_empty()); // Still 1 ahead of the bot
+
+        translator.apply_trade(trade(Side::Sell, 101, 2));
+        let events = translator.take_outside_events();
+        let [Event::Trade(fill)] = events.as_slice() else {
+            panic!("expected one bot fill, got {events:?}");
+        };
+        assert_eq!(fill.maker_order_id, OrderId(FIRST_BOT_ID + 1));
+        assert_eq!(fill.quantity, Quantity(1));
+    }
+
+    #[test]
+    fn new_coinbase_liquidity_that_crosses_a_bot_order_fills_it() {
+        let mut translator = L2Translator::new();
+        translator.apply(&[level(Side::Buy, 99, 5), level(Side::Sell, 102, 5)]);
+        // The bot bids 101, inside the spread; then a Coinbase ask appears at 100
+        translator.submit(bot_limit(1, Side::Buy, 101, 3));
+        translator.apply(&[level(Side::Sell, 100, 2)]);
+
+        let events = translator.take_outside_events();
+        assert!(matches!(events.as_slice(), [Event::Trade(t)] if t.quantity == Quantity(2)));
+        assert_eq!(translator.unexpected_events(), 0);
     }
 }

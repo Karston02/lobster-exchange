@@ -42,12 +42,13 @@ pub struct Timed<T> {
 ///
 /// Sorted by timestamp, with trades moved `trade_lead_ns` earlier. Ties keep
 /// trades first, and otherwise keep the original order. Consecutive level
-/// changes with the same sort time become one `Step::Levels`.
+/// changes with the same sort time become one `Step::Levels`. Each step is
+/// stamped with its sort time.
 pub fn merge(
     levels: &[Timed<LevelUpdate>],
     trades: &[Timed<TradePrint>],
     trade_lead_ns: u64,
-) -> Vec<Step> {
+) -> Vec<Timed<Step>> {
     enum Item {
         Level(LevelUpdate),
         Trade(TradePrint),
@@ -67,28 +68,34 @@ pub fn merge(
 
     let mut steps = Vec::new();
     let mut batch: Vec<LevelUpdate> = Vec::new();
-    let mut batch_time = None;
+    let mut batch_time = 0;
+    let flush = |steps: &mut Vec<Timed<Step>>, batch: &mut Vec<LevelUpdate>, time: u64| {
+        if !batch.is_empty() {
+            steps.push(Timed {
+                exchange_ns: time,
+                item: Step::Levels(std::mem::take(batch)),
+            });
+        }
+    };
     for (time, _, item) in items {
         match item {
             Item::Level(update) => {
-                if batch_time != Some(time) && !batch.is_empty() {
-                    steps.push(Step::Levels(std::mem::take(&mut batch)));
+                if batch_time != time {
+                    flush(&mut steps, &mut batch, batch_time);
                 }
-                batch_time = Some(time);
+                batch_time = time;
                 batch.push(update);
             }
             Item::Trade(trade) => {
-                if !batch.is_empty() {
-                    steps.push(Step::Levels(std::mem::take(&mut batch)));
-                }
-                batch_time = None;
-                steps.push(Step::Trade(trade));
+                flush(&mut steps, &mut batch, batch_time);
+                steps.push(Timed {
+                    exchange_ns: time,
+                    item: Step::Trade(trade),
+                });
             }
         }
     }
-    if !batch.is_empty() {
-        steps.push(Step::Levels(batch));
-    }
+    flush(&mut steps, &mut batch, batch_time);
     steps
 }
 
@@ -119,10 +126,10 @@ mod tests {
     }
 
     /// Summarizes steps as e.g. "L100,101 T50"
-    fn shape(steps: &[Step]) -> String {
+    fn shape(steps: &[Timed<Step>]) -> String {
         steps
             .iter()
-            .map(|step| match step {
+            .map(|step| match &step.item {
                 Step::Levels(updates) => {
                     let prices: Vec<String> =
                         updates.iter().map(|u| u.price.0.to_string()).collect();
@@ -160,6 +167,13 @@ mod tests {
         let trades = [trade(12, 50)];
         assert_eq!(shape(&merge(&levels, &trades, 0)), "L100 T50");
         assert_eq!(shape(&merge(&levels, &trades, 5)), "T50 L100");
+    }
+
+    #[test]
+    fn steps_carry_their_sort_time() {
+        let steps = merge(&[level(10, 100), level(30, 101)], &[trade(20, 50)], 5);
+        let times: Vec<u64> = steps.iter().map(|step| step.exchange_ns).collect();
+        assert_eq!(times, vec![10, 15, 30]);
     }
 
     #[test]
