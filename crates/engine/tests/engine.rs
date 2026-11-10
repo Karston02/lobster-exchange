@@ -176,3 +176,71 @@ fn same_commands_always_produce_same_events() {
     };
     assert_eq!(run(), run());
 }
+
+#[test]
+fn market_sell_remainder_is_cancelled_for_no_liquidity() {
+    let mut engine = Engine::new();
+    engine.process(limit(1, Side::Buy, 100, 2));
+
+    let events = engine.process(market(2, Side::Sell, 5));
+    assert_eq!(
+        events,
+        vec![
+            accepted(2),
+            trade(1, 2, 100, 2),
+            Event::Cancelled {
+                id: OrderId(2),
+                remaining: Quantity(3),
+                reason: CancelReason::NoLiquidity,
+            },
+        ]
+    );
+}
+
+#[test]
+fn cancelled_order_can_no_longer_trade() {
+    let mut engine = Engine::new();
+    engine.process(limit(1, Side::Sell, 100, 5));
+    engine.process(Command::Cancel { id: OrderId(1) });
+
+    // The only seller is gone, so this buy just rests
+    let events = engine.process(limit(2, Side::Buy, 100, 5));
+    assert_eq!(events, vec![accepted(2)]);
+    assert_eq!(engine.book().best_ask(), None);
+}
+
+#[test]
+fn id_of_a_fully_filled_order_can_be_reused() {
+    // Documents a known limitation: ids are only checked against resting orders
+    let mut engine = Engine::new();
+    engine.process(limit(1, Side::Sell, 100, 5));
+    engine.process(limit(2, Side::Buy, 100, 5)); // Order 1 is now fully filled
+
+    assert_eq!(
+        engine.process(limit(1, Side::Sell, 101, 5)),
+        vec![accepted(1)]
+    );
+}
+
+#[test]
+fn book_is_never_left_crossed() {
+    // After every command, the best bid must stay below the best ask
+    let mut engine = Engine::new();
+    let commands = [
+        limit(1, Side::Sell, 101, 5),
+        limit(2, Side::Buy, 99, 5),
+        limit(3, Side::Buy, 102, 3),  // Crosses and fills against order 1
+        limit(4, Side::Sell, 98, 10), // Sweeps the bids and rests the rest
+        market(5, Side::Buy, 4),
+        limit(6, Side::Buy, 97, 1),
+    ];
+    for command in commands {
+        engine.process(command);
+        if let (Some(bid), Some(ask)) = (engine.book().best_bid(), engine.book().best_ask()) {
+            assert!(
+                bid < ask,
+                "book crossed after {command:?}: bid {bid:?}, ask {ask:?}"
+            );
+        }
+    }
+}
