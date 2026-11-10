@@ -3,6 +3,7 @@
     python strategies/compare.py                          # newest recording
     python strategies/compare.py <file>.jsonl --maker-fee-bps 40
     python strategies/compare.py --skew-ticks 2 --max-position-btc 0.005
+    python strategies/compare.py --imbalance-threshold 0.5 --imbalance-levels 3
 
 Each strategy gets a fresh backtest of the same data with the same settings.
 Prints a table and saves strategies/output/compare.png.
@@ -12,7 +13,7 @@ import argparse
 from pathlib import Path
 
 import harness
-from strats import InventorySkew, KeepPlace, Naive
+from strats import ImbalanceFilter, InventorySkew, KeepPlace, Naive
 from units import lots
 
 
@@ -22,6 +23,8 @@ def main() -> None:
     parser.add_argument("--size-btc", type=float, default=0.001)
     parser.add_argument("--max-position-btc", type=float, default=0.01)
     parser.add_argument("--skew-ticks", type=int, default=1)
+    parser.add_argument("--imbalance-threshold", type=float, default=0.6)
+    parser.add_argument("--imbalance-levels", type=int, default=1)
     parser.add_argument("--latency-ms", type=float, default=10)
     parser.add_argument("--maker-fee-bps", type=int, default=0)
     parser.add_argument("--taker-fee-bps", type=int, default=0)
@@ -34,6 +37,13 @@ def main() -> None:
         Naive(size),
         KeepPlace(size),
         InventorySkew(size, lots(args.max_position_btc), args.skew_ticks),
+        ImbalanceFilter(
+            size,
+            lots(args.max_position_btc),
+            args.skew_ticks,
+            args.imbalance_threshold,
+            args.imbalance_levels,
+        ),
     ]
     config = {
         "latency_ms": args.latency_ms,
