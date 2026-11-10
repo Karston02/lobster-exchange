@@ -7,6 +7,8 @@ charts for every strategy, so they can be compared fairly on the same data.
 """
 
 import bisect
+import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -15,6 +17,9 @@ import lobster
 from units import NS_PER_SECOND, btc, price_usd, usd
 
 RECORDINGS = Path("data/coinbase/BTC-USD")
+
+# crypto trades around the clock, so a year is 365 full days of minutes
+MINUTES_PER_YEAR = 365 * 24 * 60
 
 
 class Strategy(Protocol):
@@ -45,6 +50,30 @@ def newest_recording() -> Path:
     return files[-1]
 
 
+def recording_span_ns(path: Path) -> tuple[int, int]:
+    """Our receive times of a recording's first and last lines (cheap: reads two lines)."""
+    with open(path, "rb") as f:
+        first = json.loads(f.readline())["recv_ns"]
+        f.seek(0, 2)
+        size = f.tell()
+        f.seek(max(0, size - 1_000_000))  # The last line is well under 1 MB
+        last = json.loads(f.read().splitlines()[-1])["recv_ns"]
+    return first, last
+
+
+def has_trades(path: Path) -> bool:
+    """Whether a recording includes the market_trades channel (older ones don't).
+
+    Without trades, nothing ever reaches a resting bot order, so the file
+    can't be used to evaluate a market maker.
+    """
+    with open(path) as f:
+        for _, line in zip(range(500), f):
+            if '"market_trades"' in line:
+                return True
+    return False
+
+
 def open_backtest(path: Path, **config) -> lobster.Backtest:
     """Loads a recording, warning about any problems reading it."""
     bt = lobster.Backtest(str(path), **config)
@@ -54,10 +83,24 @@ def open_backtest(path: Path, **config) -> lobster.Backtest:
     return bt
 
 
-def run(bt: lobster.Backtest, strategy: Strategy, every_ns: int = NS_PER_SECOND) -> Result:
-    """Runs `strategy` until the market data ends, then computes its metrics."""
+def run(
+    bt: lobster.Backtest,
+    strategy: Strategy,
+    every_ns: int = NS_PER_SECOND,
+    start_ns: int | None = None,
+    end_ns: int | None = None,
+) -> Result:
+    """Runs `strategy` and computes its metrics.
+
+    By default it trades from the start of the recording to the end. With
+    `start_ns` / `end_ns` it only trades inside that window: the market is
+    replayed up to `start_ns` with no bot, and trading stops at `end_ns`.
+    The bot starts flat, so PnL is measured from the window's start.
+    """
+    if start_ns is not None:
+        bt.run_until(start_ns)
     result = Result(name=strategy.name, start_ns=bt.now_ns)
-    while not bt.market_finished():
+    while not bt.market_finished() and (end_ns is None or bt.now_ns < end_ns):
         bt.run_until(bt.now_ns + every_ns)
         result.fills.extend(bt.take_fills())
         strategy.on_tick(bt)
@@ -127,12 +170,33 @@ def max_drawdown(pnl: list[int]) -> int:
     return worst
 
 
+def sharpe(pnl: list[int], t: list[float]) -> float:
+    """Annualized Sharpe ratio from PnL changes over each minute.
+
+    Sharpe = average return / standard deviation of returns, scaled to a year
+    (x sqrt(minutes per year)). With only an hour or so of data it's a rough
+    guide, not a precise number.
+    """
+    per_minute = []
+    next_minute, last = 60.0, 0
+    for seconds, value in zip(t, pnl):
+        if seconds >= next_minute:
+            per_minute.append(value - last)
+            last, next_minute = value, next_minute + 60.0
+    if len(per_minute) < 2:
+        return 0.0
+    mean = sum(per_minute) / len(per_minute)
+    var = sum((x - mean) ** 2 for x in per_minute) / (len(per_minute) - 1)
+    return mean / math.sqrt(var) * math.sqrt(MINUTES_PER_YEAR) if var else 0.0
+
+
 def metrics(bt: lobster.Backtest, result: Result) -> dict:
     fills = result.fills
     pnl = bt.pnl_at_mid() or 0
     capture = spread_capture(result)
+    minutes = (result.t[-1] / 60) if result.t else 0.0
     m = {
-        "minutes": (result.t[-1] / 60) if result.t else 0.0,
+        "minutes": minutes,
         "fills": len(fills),
         "maker_fills": sum(f.maker for f in fills),
         "volume_btc": btc(sum(f.quantity for f in fills)),
@@ -143,6 +207,8 @@ def metrics(bt: lobster.Backtest, result: Result) -> dict:
         "inventory_pnl_usd": usd(pnl + bt.fees_paid - capture),
         "pnl_usd": usd(pnl),
         "max_drawdown_usd": usd(max_drawdown(result.pnl)),
+        "pnl_per_hour_usd": usd(pnl) / (minutes / 60) if minutes else 0.0,
+        "sharpe": sharpe(result.pnl, result.t),
         "rejections": bt.rejections,
     }
     for horizon in (1, 5, 30):
@@ -165,6 +231,7 @@ def print_summary(result: Result) -> None:
         f" + inventory ${m['inventory_pnl_usd']:,.2f} - fees ${m['fees_usd']:,.2f}"
     )
     print(f"  max drawdown:   ${m['max_drawdown_usd']:,.2f}")
+    print(f"  per hour:       ${m['pnl_per_hour_usd']:,.2f}, Sharpe {m['sharpe']:+.1f} (annualized)")
     print(f"  rejected:       {m['rejections']} (cancels that lost the race to a fill)")
     for horizon in (1, 5, 30):
         print(
@@ -184,6 +251,7 @@ def print_table(results: list[Result]) -> None:
         ("fees $", "fees_usd", "{:,.2f}"),
         ("PnL $", "pnl_usd", "{:,.2f}"),
         ("drawdown $", "max_drawdown_usd", "{:,.2f}"),
+        ("Sharpe", "sharpe", "{:+.1f}"),
         ("markout 5s", "markout_5s_ticks", "{:+.2f}"),
     ]
     width = max(len(r.name) for r in results)
