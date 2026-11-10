@@ -16,6 +16,7 @@ a "done" message at the end. The page can send {"type": "pause"},
 
 import asyncio
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
@@ -25,9 +26,18 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from config import get_settings  # noqa: E402
+from db import open_database  # noqa: E402
 from session import STRATEGIES, Session, list_recordings  # noqa: E402
 
-app = FastAPI(title="lobster")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Runs once at startup: creates the database or brings its tables up to date."""
+    open_database(get_settings().db_path).close()
+    yield
+
+
+app = FastAPI(title="lobster", lifespan=lifespan)
 
 MAX_SPEED = 500.0
 

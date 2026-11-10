@@ -28,6 +28,7 @@ def test_defaults_keep_everything_local_and_outside_the_repo():
     assert settings.data_dir == ROOT / "data"
     assert settings.state_dir == Path.home() / ".lobster"
     assert settings.schwab.token_path == Path.home() / ".lobster" / "schwab_token.json"
+    assert settings.db_path == Path.home() / ".lobster" / "lobster.db"
 
 
 def test_reads_the_env_file(tmp_path):
@@ -53,6 +54,11 @@ def test_relative_paths_count_from_the_repo_root_and_tilde_is_home():
 
     assert settings.data_dir == ROOT / "recordings"
     assert settings.schwab.token_path == Path.home() / "lobster-state" / "schwab_token.json"
+
+
+def test_the_database_follows_the_state_dir_unless_set():
+    assert load({"LOBSTER_STATE_DIR": "/srv/lobster"}).db_path == Path("/srv/lobster/lobster.db")
+    assert load({"LOBSTER_DB_PATH": "/data/l.db"}).db_path == Path("/data/l.db")
 
 
 def test_an_explicit_token_path_wins():

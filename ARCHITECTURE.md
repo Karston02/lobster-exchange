@@ -188,6 +188,14 @@ _Why our own router:_ six fixed pages need only "read the path, change the path"
 _Why the status asks the server:_ the browser never sees keys or tokens. `/api/status` answers yes/no questions (keys set? token saved?), so the top bar can say what's wrong without anything secret crossing the wire.
 _Styles:_ theme colors are CSS variables in `styles.css`, taken from the mockup. The old replay's styles are nested under `.replay` (native CSS nesting), so its global `button` look can't leak into new pages.
 
+### 20. SQLite with numbered SQL migrations
+
+The app's own data (settings changed in the app, and later test results, ideas, notes and chart drawings) lives in one SQLite file at LOBSTER_DB_PATH, outside the repo. Tables are created and changed only by numbered files in `dashboard/server/db/migrations/` (`0001_app_settings.sql`, ...), applied in order at server start.
+_Why SQLite:_ one user, one server. It's a single file with no database server to run, it's built into Python, and it moves to the always-on server by copying one file. If many processes ever write at once, Postgres is the upgrade.
+_Why plain SQL migrations, not an ORM with Alembic:_ the schema stays readable SQL, there's nothing to install, and the runner is about 60 lines Karston can read. Each migration runs in a transaction (SQLite can undo table changes too), so a broken one leaves no half-made tables.
+_Guards:_ each applied migration's checksum is stored, so editing one after the fact is refused (add a new one instead). A database with migrations the code doesn't know (made by newer code) is refused too.
+_Settings:_ WAL mode (reading doesn't wait for a write in progress), foreign keys on (SQLite's default is off), and autocommit with an explicit `transaction()` helper, so what's saved together is visible in the code.
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.

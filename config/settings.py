@@ -67,7 +67,8 @@ class Settings:
     """The app's own settings (`LOBSTER_*`), plus `schwab`."""
 
     data_dir: Path  # market data recordings
-    state_dir: Path  # login token, later the database; outside the repo
+    state_dir: Path  # login token and database; outside the repo
+    db_path: Path  # the SQLite database file
     host: str
     port: int
     schwab: SchwabSettings
@@ -84,6 +85,7 @@ def load_settings(env_file: Path | None = ENV_FILE, environ: Mapping[str, str] |
     return Settings(
         data_dir=_path(get("LOBSTER_DATA_DIR", "data")),
         state_dir=state_dir,
+        db_path=_path(get("LOBSTER_DB_PATH", str(state_dir / "lobster.db"))),
         host=_local_host(get("LOBSTER_HOST", "127.0.0.1")),
         port=_port(get("LOBSTER_PORT", "8000")),
         schwab=SchwabSettings(

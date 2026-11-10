@@ -30,6 +30,11 @@ profile.json*
 # Charts and results from strategy runs
 strategies/output/
 
+# Databases (they live in ~/.lobster, but never commit one by accident)
+*.db
+*.db-wal
+*.db-shm
+
 # Broker credentials and tokens (never commit)
 .env
 *token*.json

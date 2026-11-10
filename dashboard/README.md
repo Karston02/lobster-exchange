@@ -33,6 +33,7 @@ Backtests, pick a recording and a strategy, and press Start. Speed is market sec
 ## Layout
 
 - `server/app.py`: FastAPI routes: `/api/status` (yes/no connection facts for the top bar), `/api/recordings`, `/api/strategies`, and the `/ws/replay` websocket. Host and port come from the settings (`config/`).
+- `server/db/`: the SQLite database. `connect`, `transaction`, and `migrate`, which applies the numbered `.sql` files in `db/migrations/` once each, at server start. The file lives at LOBSTER_DB_PATH (`~/.lobster/lobster.db` by default). Tests: `pytest dashboard/server/db`.
 - `server/session.py`: one replay (backtest + strategy), advanced a tick at a time. No networking.
 - `web/src/App.tsx`: the shell: top bar, then the page the URL names.
 - `web/src/router.tsx`: a tiny router (`usePath`, `navigate`, `Link`); `routes.ts` lists the pages.
