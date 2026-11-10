@@ -195,6 +195,11 @@ impl OrderBook {
         self.index.contains_key(&id)
     }
 
+    /// Returns how many price levels one side of the book has.
+    pub fn level_count(&self, side: Side) -> usize {
+        self.levels(side).len()
+    }
+
     /// Returns how many orders are resting on the book, across both sides.
     pub fn order_count(&self) -> usize {
         self.index.len()
@@ -473,6 +478,16 @@ mod tests {
         assert_eq!(book.best_ask(), Some(Price(99))); // Leftover 2 rests
         assert_eq!(book.quantity_at(Side::Sell, Price(99)), Quantity(2));
         assert_eq!(book.best_bid(), Some(Price(98)));
+    }
+
+    #[test]
+    fn level_count_counts_prices_not_orders() {
+        let mut book = OrderBook::new();
+        book.submit(order(1, Side::Buy, 100, 5));
+        book.submit(order(2, Side::Buy, 100, 5));
+        book.submit(order(3, Side::Buy, 99, 5));
+        assert_eq!(book.level_count(Side::Buy), 2);
+        assert_eq!(book.level_count(Side::Sell), 0);
     }
 
     #[test]
