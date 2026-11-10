@@ -56,7 +56,7 @@ _Why:_ it's the most common rule on real exchanges (Nasdaq, CME futures mostly, 
 
 - `BTreeMap` keeps price levels **sorted**, so the best bid/ask is always at one end: O(log n) to find a level.
 - `VecDeque` (a double-ended queue) at each level gives FIFO order: push new orders on the back, fill from the front.
-- The `HashMap` lets `Cancel(order_id)` find an order directly instead of scanning the whole book.
+- The `HashMap` lets `Cancel(order_id)` find an order directly instead of scanning the whole book. It maps each resting order's id to its `(side, price)`, so cancel jumps to the right level and only scans that one queue. True O(1) cancel (no scan at all) needs an arena + linked list per level, which is a Phase 2 optimization.
 
 _Why:_ simple, correct, and fast enough to start. It's v1 on purpose: once we have benchmarks, we'll replace parts with faster structures (arena/slab allocation, array-indexed price levels) and measure the speedup. That before/after comparison is a resume bullet.
 
