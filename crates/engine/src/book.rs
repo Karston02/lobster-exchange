@@ -30,7 +30,7 @@ impl OrderBook {
     /// Puts an order on the book to rest (wait) in line at its price.
     ///
     /// This does not check for matches; use [`OrderBook::submit`] for that.
-    pub fn rest(&mut self, order: Order) {
+    fn rest(&mut self, order: Order) {
         self.index.insert(order.id, (order.side, order.price));
         let levels = match order.side {
             Side::Buy => &mut self.bids,
@@ -45,7 +45,7 @@ impl OrderBook {
     /// The order trades against the opposite side for as long as it crosses:
     /// best price first, and oldest order first at each price. Whatever is
     /// left over rests on the book at the order's own price.
-    pub fn submit(&mut self, mut order: Order) -> Vec<Trade> {
+    pub(crate) fn submit(&mut self, mut order: Order) -> Vec<Trade> {
         let trades =
             self.take_liquidity(order.id, order.side, &mut order.quantity, Some(order.price));
 
@@ -63,7 +63,12 @@ impl OrderBook {
     /// A market order has no price limit, so it keeps walking through price
     /// levels until it is filled or the other side runs out. It never rests:
     /// if the book is too thin, the unfilled remainder is dropped.
-    pub fn submit_market(&mut self, id: OrderId, side: Side, mut quantity: Quantity) -> Vec<Trade> {
+    pub(crate) fn submit_market(
+        &mut self,
+        id: OrderId,
+        side: Side,
+        mut quantity: Quantity,
+    ) -> Vec<Trade> {
         self.take_liquidity(id, side, &mut quantity, None)
     }
 
@@ -151,7 +156,7 @@ impl OrderBook {
     ///
     /// Returns `None` if no order with that id is resting: it was already
     /// filled, already cancelled, or never existed.
-    pub fn cancel(&mut self, id: OrderId) -> Option<Order> {
+    pub(crate) fn cancel(&mut self, id: OrderId) -> Option<Order> {
         // Look up where the order lives instead of searching every price level.
         let (side, price) = self.index.remove(&id)?;
         let levels = match side {
@@ -169,6 +174,11 @@ impl OrderBook {
             levels.remove(&price);
         }
         Some(order)
+    }
+
+    /// Returns whether an order with this id is resting on the book.
+    pub fn contains(&self, id: OrderId) -> bool {
+        self.index.contains_key(&id)
     }
 
     /// Returns how many orders are resting on the book, across both sides.
