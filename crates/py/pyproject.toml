@@ -1,0 +1,16 @@
+# Tells Python's packaging tools to build this crate with maturin.
+# Build into the active virtualenv with:
+#   maturin develop --release -m crates/py/Cargo.toml
+[build-system]
+requires = ["maturin>=1.9.4,<2"]
+build-backend = "maturin"
+
+[project]
+name = "lobster"
+version = "0.1.0"
+description = "Python bindings for the lobster-exchange matching engine"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
