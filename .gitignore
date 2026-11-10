@@ -26,3 +26,6 @@ ROADMAP.md
 
 # Profiler output (samply)
 profile.json*
+
+# Charts and results from strategy runs
+strategies/output/
