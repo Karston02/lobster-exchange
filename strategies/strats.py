@@ -9,6 +9,10 @@ one change is worth:
 - `InventorySkew` (v2): `KeepPlace`, plus lean against the position: when
   long, quote the bid further away (buy less) and when short, the ask; stop
   quoting the side that would go past a position limit.
+- `ImbalanceFilter` (v3): `InventorySkew`, plus step back from the side the
+  book says is about to be run over: if sellers heavily outnumber buyers at
+  the top of the book, don't bid (the price is likely to drop through us),
+  and the reverse. `signals.py` checks whether that signal holds in the data.
 """
 
 import lobster
@@ -88,3 +92,30 @@ class InventorySkew(KeepPlace):
         if bt.position <= -self.max_position:
             sell = None  # Short enough: stop selling
         return {"buy": buy, "sell": sell}
+
+
+class ImbalanceFilter(InventorySkew):
+    name = "v3 imbalance filter"
+
+    def __init__(self, size: int, max_position: int, skew_ticks: int, threshold: float, levels: int = 1):
+        """
+        threshold: skip a side when imbalance is past this against it (0 to 1)
+        levels:    price levels per side to add up when measuring imbalance
+        """
+        super().__init__(size, max_position, skew_ticks)
+        self.threshold = threshold
+        self.levels = levels
+
+    def targets(self, bt: lobster.Backtest) -> dict:
+        targets = super().targets(bt)
+        bid_size = sum(q for _, q in bt.top("buy", self.levels))
+        ask_size = sum(q for _, q in bt.top("sell", self.levels))
+        if bid_size + ask_size == 0:
+            return targets
+        imbalance = (bid_size - ask_size) / (bid_size + ask_size)
+        if imbalance < -self.threshold:
+            targets["buy"] = None  # Sellers dominate: a bid would likely get run over
+        if imbalance > self.threshold:
+            targets["sell"] = None  # Buyers dominate: an ask would likely get run over
+        return targets
+
