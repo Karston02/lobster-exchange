@@ -1,4 +1,4 @@
-import type { FillMessage } from "../types";
+import type { FillMessage } from "./types";
 import { btc, clock, dollars, usd } from "../units";
 
 interface Props {

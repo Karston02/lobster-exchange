@@ -1,8 +1,7 @@
-# Dashboard
+# Lobster web app
 
-A web page that replays a recording with a strategy trading in it, live:
-order book ladder (with the bot's orders and queue position), price chart
-with fills, position, PnL, and recent fills.
+The app shell (top bar, six pages, connection status) and, under Backtests for
+now, the original order book replay: a recording with a strategy trading in it.
 
 ```
 recording ──► Python server (FastAPI + lobster.Backtest) ──websocket──► React page
@@ -28,16 +27,19 @@ npm install        # first time only
 npm run dev
 ```
 
-Open the URL it prints (usually http://localhost:5173), pick a recording and a
-strategy, and press Start. Speed is market seconds per real second.
+Open the URL it prints (usually http://localhost:5173). For the replay, go to
+Backtests, pick a recording and a strategy, and press Start. Speed is market seconds per real second.
 
 ## Layout
 
+- `server/app.py`: FastAPI routes: `/api/status` (yes/no connection facts for the top bar), `/api/recordings`, `/api/strategies`, and the `/ws/replay` websocket. Host and port come from the settings (`config/`).
 - `server/session.py`: one replay (backtest + strategy), advanced a tick at a time. No networking.
-- `server/app.py`: FastAPI routes: `/api/recordings`, `/api/strategies`, and the `/ws/replay` websocket.
-- `web/src/useReplay.ts`: the websocket connection, turned into React state.
-- `web/src/types.ts`: the message formats, mirroring `session.py`.
-- `web/src/components/`: `Controls`, `OrderBook`, `LineChart` (plain SVG, no chart library), `Stats`, `Fills`.
+- `web/src/App.tsx`: the shell: top bar, then the page the URL names.
+- `web/src/router.tsx`: a tiny router (`usePath`, `navigate`, `Link`); `routes.ts` lists the pages.
+- `web/src/shell/`: `TopBar`, `ConnectionStatus` (the status dot) and `SettingsPanel`.
+- `web/src/pages/`: one file per page. Pages not built yet are one quiet line in `placeholders.tsx`.
+- `web/src/replay/`: the order book replay (`ReplayView`, its components, `useReplay`, message `types`). Its styles are nested under `.replay` so they stay out of the rest of the app.
+- `web/src/styles.css`: the theme (colors as CSS variables, Inter for text, JetBrains Mono for numbers via `.num`).
 
 Prices travel as integer ticks and sizes as integer lots, the same as in the
 engine. Two values don't: time is sent as seconds since the start, and order

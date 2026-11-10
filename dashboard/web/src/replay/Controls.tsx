@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { Recording, ReplaySettings, StrategyInfo } from "../types";
-import type { Status } from "../useReplay";
+import type { Recording, ReplaySettings, StrategyInfo } from "./types";
+import type { Status } from "./useReplay";
 
 interface Props {
   status: Status;

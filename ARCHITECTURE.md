@@ -181,6 +181,13 @@ _Why:_ the app will move from the Mac to an always-on server. If paths and ports
 _Safety built in:_ secrets are wrapped in `Secret`, which prints as stars, so a stray print or log can't leak a key. The host must be local (`127.0.0.1`) until the app has a login (build step 8); anything else is refused at startup.
 _Why plain dataclasses, not pydantic-settings:_ no new dependency, and the loader takes the environment as an argument, so tests pass a dict instead of patching the real environment.
 
+### 19. The web app shell: six pages, a tiny router, scoped styles
+
+`dashboard/web` is now the Lobster app: a top bar (logo, Home, Portfolio, Charts, Ideas, Backtests, Forward tests, connection status) above whichever page the URL names. Unbuilt pages are one quiet line saying which step brings them.
+_Why our own router:_ six fixed pages need only "read the path, change the path". `router.tsx` does that in about 40 lines with React's `useSyncExternalStore` (the standard way to read state that lives outside React, here the URL). If pages ever need nested routes or loaders, swap in React Router.
+_Why the status asks the server:_ the browser never sees keys or tokens. `/api/status` answers yes/no questions (keys set? token saved?), so the top bar can say what's wrong without anything secret crossing the wire.
+_Styles:_ theme colors are CSS variables in `styles.css`, taken from the mockup. The old replay's styles are nested under `.replay` (native CSS nesting), so its global `button` look can't leak into new pages.
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.

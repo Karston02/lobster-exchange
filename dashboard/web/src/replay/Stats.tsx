@@ -1,4 +1,4 @@
-import type { Hello, Tick } from "../types";
+import type { Hello, Tick } from "./types";
 import { btc, clock, usd } from "../units";
 
 interface Props {

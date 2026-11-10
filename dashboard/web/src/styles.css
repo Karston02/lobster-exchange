@@ -1,13 +1,24 @@
+/* The app's theme and base styles. Colors match the design mockup. */
+
 :root {
-  --bg: #0f1216;
-  --panel: #171b21;
-  --border: #262c35;
-  --text: #e6e9ee;
-  --muted: #8a94a3;
-  --bid: #3ecf8e;
-  --ask: #ff5c5c;
-  --mine: #ffd166;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --bg: #0e1116;
+  --surface: #12161c; /* the rare filled area, e.g. a popover */
+  --hover: #161b22;
+  --active: #1b2330;
+  --line: #1b2028; /* hairlines between sections; no boxes around them */
+  --text: #e6eaf0;
+  --muted: #9aa4b2;
+  --gain: #4fd1a1;
+  --loss: #ff8f6b;
+  --accent: #4ea1ff;
+  --link: #7db8ff;
+  --mine: #ffd166; /* our own orders */
+
+  --font-text: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-num: "JetBrains Mono", ui-monospace, monospace;
+
+  color-scheme: dark;
+  font-family: var(--font-text);
   color: var(--text);
   background: var(--bg);
 }
@@ -18,289 +29,33 @@
 
 body {
   margin: 0;
-}
-
-main {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-header {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-h1 {
-  font-size: 20px;
-  margin: 0;
-}
-
-h2 {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-  margin: 0 0 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-h2 .value {
-  color: var(--text);
-  text-transform: none;
-  margin-left: 6px;
-}
-
-.subtitle,
-.hint {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.status {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--border);
-}
-
-.status.running {
-  background: #1f4d3a;
-}
-
-.status.paused {
-  background: #5a4a1a;
-}
-
-.status.error {
-  background: #5a1f1f;
-}
-
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px;
-}
-
-.controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px;
-}
-
-.controls label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.controls select,
-.controls input[type="number"] {
   background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px;
 }
 
-.controls input[type="number"] {
-  width: 90px;
+a {
+  color: var(--link);
 }
 
-.controls .hint {
-  width: 100%;
-  margin: 0;
-}
-
-.buttons {
-  display: flex;
-  gap: 8px;
-}
-
-button {
-  background: #2b6cb0;
-  color: white;
-  border: 0;
-  border-radius: 6px;
-  padding: 8px 16px;
-  cursor: pointer;
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.error {
-  color: var(--ask);
-  margin: 0;
-}
-
-.done {
-  color: var(--mine);
-  margin: 0;
-}
-
-.stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
-}
-
-.card .label {
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.card .value {
-  font-size: 20px;
-  font-variant-numeric: tabular-nums;
-  margin-top: 4px;
-}
-
-.card.up .value {
-  color: var(--bid);
-}
-
-.card.down .value {
-  color: var(--ask);
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: minmax(320px, 420px) 1fr;
-  gap: 12px;
-}
-
-@media (max-width: 900px) {
-  .grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.charts {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-}
-
-.chart svg {
-  width: 100%;
-  display: block;
-}
-
-.chart .axis {
-  fill: var(--muted);
-  font-size: 11px;
-}
-
-.chart .zero {
-  stroke: var(--border);
-  stroke-width: 1;
-}
-
-.empty {
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.ladder {
-  font-variant-numeric: tabular-nums;
-  font-size: 13px;
-}
-
-.row {
-  position: relative;
-  display: grid;
-  grid-template-columns: 110px 90px 1fr;
-  gap: 8px;
-  padding: 2px 6px;
-}
-
-.row .bar {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 0;
-  opacity: 0.15;
-}
-
-.row.buy .bar {
-  background: var(--bid);
-}
-
-.row.sell .bar {
-  background: var(--ask);
-}
-
-.row.buy .price {
-  color: var(--bid);
-}
-
-.row.sell .price {
-  color: var(--ask);
-}
-
-.row.mine {
-  outline: 1px solid var(--mine);
-  border-radius: 4px;
-}
-
-.row .bot {
-  color: var(--mine);
-  font-size: 12px;
-  z-index: 1;
-}
-
-.row span {
-  z-index: 1;
-}
-
-.spread {
-  text-align: center;
-  color: var(--muted);
-  font-size: 12px;
-  padding: 4px;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  margin: 2px 0;
-}
-
-.fills table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
+/* Every number: monospaced, with digits of equal width so columns line up */
+.num {
+  font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
 }
 
-.fills th,
-.fills td {
-  text-align: left;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--border);
-}
-
-.fills th {
+.quiet {
   color: var(--muted);
-  font-weight: 500;
 }
 
-.fills tr.buy td:nth-child(2) {
-  color: var(--bid);
+/* Page widths: one narrow reading column, or wide for tables and charts */
+.page {
+  margin: 0 auto;
+  padding: 48px 24px;
 }
 
-.fills tr.sell td:nth-child(2) {
-  color: var(--ask);
+.page.narrow {
+  max-width: 880px;
+}
+
+.page.wide {
+  max-width: 1280px;
 }

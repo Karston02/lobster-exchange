@@ -27,9 +27,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from config import get_settings  # noqa: E402
 from session import STRATEGIES, Session, list_recordings  # noqa: E402
 
-app = FastAPI(title="lobster-exchange dashboard")
+app = FastAPI(title="lobster")
 
 MAX_SPEED = 500.0
+
+
+@app.get("/api/status")
+def status() -> dict:
+    """Yes/no facts for the top bar's connection status. Never secrets or paths."""
+    schwab = get_settings().schwab
+    return {
+        "schwab": {
+            "credentials": schwab.api_key is not None and schwab.app_secret is not None,
+            "token_saved": schwab.token_path.exists(),
+        }
+    }
 
 
 @app.get("/api/recordings")

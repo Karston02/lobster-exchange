@@ -1,4 +1,4 @@
-import type { BotOrder, Tick } from "../types";
+import type { BotOrder, Tick } from "./types";
 import { btc, dollars } from "../units";
 
 interface Props {
