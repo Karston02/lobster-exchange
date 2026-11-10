@@ -1,3 +1,4 @@
+import { dateTime } from "../format";
 import { timeLeft } from "./connection";
 import type { StatusState } from "./useServerStatus";
 
@@ -5,9 +6,6 @@ interface Props {
   id: string;
   state: StatusState;
 }
-
-const dateTime = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 /** Account connections, opened from the status in the top bar. */
 export function SettingsPanel({ id, state }: Props) {
@@ -25,7 +23,7 @@ export function SettingsPanel({ id, state }: Props) {
         {schwab && schwab.accounts.length > 0 && (
           <>
             <dt>Accounts</dt>
-            <dd className="num">{schwab.accounts.join(", ")}</dd>
+            <dd>{schwab.accounts.join(", ")}</dd>
           </>
         )}
         {schwab?.login_expires_at && (

@@ -1,0 +1,40 @@
+.fold {
+  border-top: 1px solid var(--line);
+}
+
+.fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 4px;
+  cursor: pointer;
+  list-style: none; /* hide the default triangle; ours is below */
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fold > summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+
+.fold[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.fold > summary:hover {
+  color: var(--text);
+}
+
+.fold-body {
+  padding: 0 4px 16px;
+}

@@ -1,0 +1,124 @@
+/* Portfolio: summary, positions table, then folded orders and details. */
+
+.portfolio {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  font-size: 14px;
+}
+
+.picker {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.picker button {
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.picker button[aria-pressed="true"] {
+  background: var(--active);
+  color: var(--text);
+}
+
+.portfolio-value {
+  font-size: 40px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  margin-top: 8px;
+}
+
+.portfolio-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 40px;
+  margin: 16px 0 0;
+}
+
+.portfolio-stats dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.portfolio-stats dd {
+  margin: 4px 0 0;
+  font-size: 16px;
+}
+
+/* Tables: hairlines only, numbers right-aligned, scroll sideways on a phone */
+.table-scroll {
+  overflow-x: auto;
+}
+
+.portfolio table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+}
+
+.portfolio th,
+.portfolio td {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  font-weight: 400;
+}
+
+.portfolio thead th {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.portfolio th:first-child,
+.portfolio td:first-child {
+  text-align: left;
+  padding-left: 4px;
+}
+
+.portfolio tbody th a {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.portfolio tbody th a:hover {
+  color: var(--link);
+}
+
+.position-name {
+  font-size: 12px;
+  margin-top: 2px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Orders read as a list of events, so every column is left-aligned */
+.portfolio .orders th,
+.portfolio .orders td {
+  text-align: left;
+}
+
+.details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px 24px;
+  margin: 0;
+}
+
+.details dt {
+  color: var(--muted);
+}
+
+.details dd {
+  margin: 0;
+}

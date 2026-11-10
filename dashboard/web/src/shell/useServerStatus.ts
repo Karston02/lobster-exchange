@@ -12,7 +12,7 @@ export interface ServerStatus {
     connected: boolean; // the last account request worked
     problem: SchwabProblem | null;
     message: string | null; // what to do about the problem
-    accounts: string[]; // masked, e.g. "…1234"
+    accounts: string[]; // your names for them, else masked digits like "…1234"
   };
 }
 
