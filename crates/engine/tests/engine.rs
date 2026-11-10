@@ -319,3 +319,62 @@ fn ioc_with_zero_price_is_rejected() {
         vec![rejected(1, RejectReason::ZeroPrice)]
     );
 }
+
+#[test]
+fn reduce_shrinks_an_order_and_keeps_its_place_in_line() {
+    let mut engine = Engine::new();
+    engine.process(limit(1, Side::Buy, 100, 10));
+    engine.process(limit(2, Side::Buy, 100, 5));
+
+    let events = engine.process(Command::Reduce {
+        id: OrderId(1),
+        by: Quantity(7),
+    });
+    assert_eq!(
+        events,
+        vec![Event::Reduced {
+            id: OrderId(1),
+            remaining: Quantity(3),
+        }]
+    );
+    // Order 1 is still first in line: a sell of 3 fills it, not order 2
+    let events = engine.process(limit(3, Side::Sell, 100, 3));
+    assert_eq!(events, vec![accepted(3), trade(1, 3, 100, 3)]);
+}
+
+#[test]
+fn reducing_by_everything_left_cancels() {
+    let mut engine = Engine::new();
+    engine.process(limit(1, Side::Sell, 100, 4));
+    let events = engine.process(Command::Reduce {
+        id: OrderId(1),
+        by: Quantity(9),
+    });
+    assert_eq!(
+        events,
+        vec![Event::Cancelled {
+            id: OrderId(1),
+            remaining: Quantity(4),
+            reason: CancelReason::Requested,
+        }]
+    );
+    assert_eq!(engine.book().order_count(), 0);
+}
+
+#[test]
+fn reduce_rejects_zero_and_unknown_orders() {
+    let mut engine = Engine::new();
+    engine.process(limit(1, Side::Buy, 100, 5));
+    let reduce = |id: u64, by: u64| Command::Reduce {
+        id: OrderId(id),
+        by: Quantity(by),
+    };
+    assert_eq!(
+        engine.process(reduce(1, 0)),
+        vec![rejected(1, RejectReason::ZeroQuantity)]
+    );
+    assert_eq!(
+        engine.process(reduce(2, 1)),
+        vec![rejected(2, RejectReason::UnknownOrderId)]
+    );
+}

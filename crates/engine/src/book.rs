@@ -202,6 +202,20 @@ impl OrderBook {
         Some(order)
     }
 
+    /// Shrinks a resting order by `by` without moving it in its line, and
+    /// returns what's left. The caller makes sure the order exists and that
+    /// `by` is smaller than its remaining quantity.
+    pub(crate) fn reduce(&mut self, id: OrderId, by: Quantity) -> Quantity {
+        let (side, price) = self.index[&id];
+        let order = self
+            .levels_mut(side)
+            .get_mut(&price)
+            .and_then(|queue| queue.iter_mut().find(|order| order.id == id))
+            .expect("index points at a resting order");
+        order.quantity.0 -= by.0;
+        order.quantity
+    }
+
     /// Returns whether an order with this id is resting on the book.
     pub fn contains(&self, id: OrderId) -> bool {
         self.index.contains_key(&id)
@@ -244,6 +258,15 @@ impl OrderBook {
             .map(|queue| queue.iter().map(|order| order.quantity.0).sum())
             .unwrap_or(0);
         Quantity(total)
+    }
+
+    /// Returns the resting order with this id, if there is one.
+    pub fn order(&self, id: OrderId) -> Option<&Order> {
+        let (side, price) = self.index.get(&id)?;
+        self.levels(*side)
+            .get(price)?
+            .iter()
+            .find(|order| order.id == id)
     }
 
     /// Returns the orders waiting at one price, front of the line first.
@@ -490,6 +513,15 @@ mod tests {
         assert_eq!(book.best_ask(), Some(Price(99))); // Leftover 2 rests
         assert_eq!(book.quantity_at(Side::Sell, Price(99)), Quantity(2));
         assert_eq!(book.best_bid(), Some(Price(98)));
+    }
+
+    #[test]
+    fn order_looks_up_a_resting_order_by_id() {
+        let mut book = OrderBook::new();
+        book.submit(order(1, Side::Buy, 100, 5));
+        book.submit(order(2, Side::Sell, 101, 3));
+        assert_eq!(book.order(OrderId(2)), Some(&order(2, Side::Sell, 101, 3)));
+        assert_eq!(book.order(OrderId(9)), None);
     }
 
     #[test]

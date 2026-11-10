@@ -34,6 +34,10 @@ pub enum Command {
     },
     /// Remove a resting order from the book.
     Cancel { id: OrderId },
+    /// Shrink a resting order by `by`, keeping its place in line (as real
+    /// exchanges do for size decreases). Reducing by its whole remaining size
+    /// or more cancels it.
+    Reduce { id: OrderId, by: Quantity },
 }
 
 /// Something that happened as a result of a command.
@@ -51,6 +55,8 @@ pub enum Event {
         remaining: Quantity,
         reason: CancelReason,
     },
+    /// A resting order was made smaller and kept its place in line.
+    Reduced { id: OrderId, remaining: Quantity },
     /// A command was refused. Nothing about the book changed.
     Rejected { id: OrderId, reason: RejectReason },
 }
@@ -74,6 +80,6 @@ pub enum RejectReason {
     ZeroPrice,
     /// An order with this id is already resting on the book.
     DuplicateOrderId,
-    /// A cancel named an order that isn't resting on the book.
+    /// A cancel or reduce named an order that isn't resting on the book.
     UnknownOrderId,
 }

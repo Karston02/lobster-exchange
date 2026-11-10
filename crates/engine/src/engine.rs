@@ -41,6 +41,7 @@ impl Engine {
                 quantity,
             } => self.new_immediate(id, side, Some(price), quantity),
             Command::Cancel { id } => self.cancel(id),
+            Command::Reduce { id, by } => self.reduce(id, by),
         }
     }
 
@@ -123,6 +124,27 @@ impl Engine {
                 reason: RejectReason::UnknownOrderId,
             }],
         }
+    }
+
+    fn reduce(&mut self, id: OrderId, by: Quantity) -> Vec<Event> {
+        if by.0 == 0 {
+            return vec![Event::Rejected {
+                id,
+                reason: RejectReason::ZeroQuantity,
+            }];
+        }
+        let Some(order) = self.book.order(id) else {
+            return vec![Event::Rejected {
+                id,
+                reason: RejectReason::UnknownOrderId,
+            }];
+        };
+        // Reducing by everything that's left is the same as cancelling
+        if by >= order.quantity {
+            return self.cancel(id);
+        }
+        let remaining = self.book.reduce(id, by);
+        vec![Event::Reduced { id, remaining }]
     }
 
     /// Checks shared by every new order. Returns why it should be rejected,
