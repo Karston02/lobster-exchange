@@ -18,11 +18,22 @@ Requires [Rust](https://rustup.rs).
 ```sh
 cargo test     # run the test suite
 cargo build    # compile
+cargo bench    # run the benchmarks
 ```
 
 ## Benchmarks
 
-_Coming soon._
+```sh
+cargo bench    # run the benchmarks (results also saved as HTML in target/criterion/report/index.html)
+```
+
+Measured with [criterion](https://github.com/bheisler/criterion.rs) on a MacBook Pro (Apple Silicon), engine v1 (`BTreeMap` + `VecDeque` + `HashMap`):
+
+| Benchmark | What it measures | Result |
+|---|---|---|
+| `mixed_workload/100000` | Commands per second on generated order flow (70% limits, 20% cancels, 10% market orders) | **11.8M commands/sec** (~85 ns each) |
+| `latency/add_then_cancel/10000` | Add a resting order, then cancel it, on a book of 10,000 orders | **76 ns** |
+| `latency/add_then_match/10000` | Add a resting sell, then a market buy that fills it, on a book of 10,000 orders | **143 ns** |
 
 ## License
 
