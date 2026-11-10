@@ -1,0 +1,93 @@
+[
+  {
+    "securitiesAccount": {
+      "type": "MARGIN",
+      "accountNumber": "99990000",
+      "positions": [
+        {
+          "shortQuantity": 0,
+          "longQuantity": 10,
+          "averagePrice": 180.5,
+          "currentDayProfitLoss": 12.3,
+          "currentDayProfitLossPercentage": 0.55,
+          "longOpenProfitLoss": 431.2,
+          "marketValue": 2236.2,
+          "instrument": {
+            "assetType": "EQUITY",
+            "symbol": "AAPL",
+            "description": "APPLE INC"
+          }
+        },
+        {
+          "shortQuantity": 0,
+          "longQuantity": 7.5,
+          "averagePrice": 500.1,
+          "currentDayProfitLoss": -4.05,
+          "longOpenProfitLoss": 120.0,
+          "marketValue": 3870.0,
+          "instrument": {
+            "assetType": "COLLECTIVE_INVESTMENT",
+            "symbol": "SPY",
+            "description": "SPDR S&P 500"
+          }
+        }
+      ],
+      "currentBalances": {
+        "liquidationValue": 6606.2,
+        "cashBalance": 500.0,
+        "buyingPower": 1000.0
+      }
+    }
+  },
+  {
+    "securitiesAccount": {
+      "type": "CASH",
+      "accountNumber": "88881234",
+      "isDayTrader": false,
+      "isClosingOnlyRestricted": false,
+      "roundTrips": 0,
+      "positions": [
+        {
+          "shortQuantity": 0,
+          "longQuantity": 3,
+          "averagePrice": 95.0,
+          "averageLongPrice": 95.0,
+          "currentDayCost": 0,
+          "currentDayProfitLoss": 1.5,
+          "currentDayProfitLossPercentage": 0.5,
+          "longOpenProfitLoss": 15.0,
+          "marketValue": 300.0,
+          "settledLongQuantity": 3,
+          "settledShortQuantity": 0,
+          "previousSessionLongQuantity": 3,
+          "maintenanceRequirement": 0,
+          "taxLotAverageLongPrice": 95.0,
+          "instrument": {
+            "assetType": "COLLECTIVE_INVESTMENT",
+            "cusip": "000000000",
+            "symbol": "VTI",
+            "uniformSymbol": "VTI"
+          }
+        }
+      ],
+      "initialBalances": {
+        "cashBalance": 40.1,
+        "liquidationValue": 338.6,
+        "cashAvailableForTrading": 40.1
+      },
+      "currentBalances": {
+        "cashBalance": 40.1,
+        "liquidationValue": 340.1,
+        "cashAvailableForTrading": 40.1,
+        "totalCash": 40.1
+      },
+      "projectedBalances": {
+        "cashAvailableForTrading": 40.1
+      }
+    },
+    "aggregatedBalance": {
+      "currentLiquidationValue": 340.1,
+      "liquidationValue": 340.1
+    }
+  }
+]
