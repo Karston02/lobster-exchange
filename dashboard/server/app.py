@@ -44,7 +44,7 @@ async def lifespan(_: FastAPI):
     Shutdown: close the Schwab connection."""
     settings = get_settings()
     open_database(settings.db_path).close()
-    app.state.schwab = SchwabService(settings.schwab)
+    app.state.schwab = SchwabService(settings.schwab, account_names=settings.account_names)
     yield
     await app.state.schwab.close()
 
@@ -71,7 +71,8 @@ async def account() -> dict:
         accounts = await schwab().accounts()
     except SchwabUnavailable as error:
         raise HTTPException(503, {"reason": error.reason, "message": error.message}) from None
-    return {"accounts": [asdict(a) for a in accounts]}
+    fetched = schwab().accounts_fetched_at()
+    return {"accounts": [asdict(a) for a in accounts], "fetched_at": fetched.isoformat() if fetched else None}
 
 
 @app.get("/api/portfolio")

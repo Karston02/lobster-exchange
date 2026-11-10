@@ -26,8 +26,10 @@ def _account(raw: dict) -> Account:
     positions = [_position(p) for p in raw.get("positions", [])]
     # Margin accounts report buyingPower; cash accounts only cashAvailableForTrading
     buying_power = balances.get("buyingPower", balances.get("cashAvailableForTrading"))
+    last4 = mask(raw.get("accountNumber", ""))
     return Account(
-        last4=mask(raw.get("accountNumber", "")),
+        last4=last4,
+        name=last4,  # the service swaps in your name for it
         type=raw.get("type", ""),
         total_value_cents=cents(balances.get("liquidationValue")),
         cash_cents=cents(balances.get("cashBalance", balances.get("cashAvailableForTrading"))),
@@ -41,13 +43,15 @@ def _account(raw: dict) -> Account:
 def _position(raw: dict) -> Position:
     instrument = raw.get("instrument", {})
     quantity = float(raw.get("longQuantity", 0)) - float(raw.get("shortQuantity", 0))
+    value = cents(raw.get("marketValue"))
     return Position(
         symbol=instrument.get("symbol", "?"),
         description=instrument.get("description", ""),
         asset_type=instrument.get("assetType", ""),
         quantity=quantity,
         average_price_cents=cents(raw.get("averagePrice")),
-        market_value_cents=cents(raw.get("marketValue")),
+        price_cents=round(value / quantity) if quantity else 0,
+        market_value_cents=value,
         day_change_cents=cents(raw.get("currentDayProfitLoss")),
         open_pnl_cents=cents(raw.get("longOpenProfitLoss", 0)) + cents(raw.get("shortOpenProfitLoss", 0)),
     )

@@ -13,7 +13,8 @@ class Position:
     description: str  # Schwab leaves this out for some positions
     asset_type: str  # EQUITY, COLLECTIVE_INVESTMENT (ETFs), ...
     quantity: float  # negative when short
-    average_price_cents: int
+    average_price_cents: int  # what you paid per share, on average
+    price_cents: int  # today's price per share: market value / quantity
     market_value_cents: int
     day_change_cents: int  # today's profit or loss on this position
     open_pnl_cents: int  # gain or loss since bought
@@ -22,6 +23,7 @@ class Position:
 @dataclass(frozen=True)
 class Account:
     last4: str  # "…1234"; the full number is never stored
+    name: str  # your name for it (LOBSTER_ACCOUNT_NAMES), else the last four digits
     type: str  # CASH or MARGIN
     total_value_cents: int  # what everything would be worth if sold now
     cash_cents: int

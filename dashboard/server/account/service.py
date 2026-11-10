@@ -5,6 +5,7 @@ file; logging in is `python connectors/schwab/login.py`, run by you.
 """
 
 import asyncio
+import dataclasses
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
@@ -38,14 +39,17 @@ class SchwabService:
         settings: SchwabSettings,
         client_factory: Callable[[], Any] | None = None,
         now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        account_names: dict[str, str] | None = None,
     ):
         self._settings = settings
+        self._names = account_names or {}
         self._factory = client_factory or self._client_from_token_file
         self._now = now
         self._client: Any = None
         self._client_login: datetime | None = None  # which login the client was made from
         self._lock = asyncio.Lock()
         self._cache: dict[str, tuple[float, Any]] = {}
+        self._fetched_at: dict[str, datetime] = {}  # when each cached answer came from Schwab
 
     # --- what the routes call ---
 
@@ -54,6 +58,10 @@ class SchwabService:
 
     async def accounts(self) -> list[Account]:
         return await self._cached("accounts", self._fetch_accounts)
+
+    def accounts_fetched_at(self) -> datetime | None:
+        """When the account data now being served came from Schwab."""
+        return self._fetched_at.get("accounts")
 
     async def portfolio(self) -> Portfolio:
         """Every account added together (uses the same cached account data)."""
@@ -81,7 +89,7 @@ class SchwabService:
             "accounts": [],
         }
         try:
-            out["accounts"] = [account.last4 for account in await self.accounts()]
+            out["accounts"] = [account.name for account in await self.accounts()]
             out["connected"] = True
         except SchwabUnavailable as error:
             out["problem"], out["message"] = error.reason, error.message
@@ -101,6 +109,7 @@ class SchwabService:
                 return hit[1]
             value = await self._call(fetch)
             self._cache[key] = (time.monotonic(), value)
+            self._fetched_at[key] = self._now()
             return value
 
     async def _call(self, fetch: Callable[[Any], Awaitable[Any]]) -> Any:
@@ -149,7 +158,11 @@ class SchwabService:
     async def _fetch_accounts(self, client: Any) -> list[Account]:
         response = await client.get_accounts(fields=[client.Account.Fields.POSITIONS])
         response.raise_for_status()
-        return parse_accounts(response.json())
+        return [dataclasses.replace(a, name=self._name(a.last4)) for a in parse_accounts(response.json())]
+
+    def _name(self, last4: str) -> str:
+        """Your name for an account: by its digits, else the "*" name, else the digits."""
+        return self._names.get(last4.lstrip("…")) or self._names.get("*") or last4
 
     async def _fetch_quotes(self, client: Any, symbols: list[str]) -> dict[str, Quote]:
         response = await client.get_quotes(symbols)
