@@ -115,7 +115,7 @@ _Why:_ going through `f64` would reintroduce the rounding errors decision #1 avo
 
 ### 10. Level2 → engine: synthetic orders, cancels taken from the back
 
-`L2Translator` (`crates/replay/src/translate.rs`) keeps a line of synthetic orders at every price in the engine so each level's total always equals Coinbase's. A level that grows gets a new order for the difference at the back of the line. A level that shrinks loses orders from the back (a partly removed order is cancelled and its remainder re-added, which keeps it last). Within a message, shrinking levels are applied before growing ones, so a price that flips from ask to bid never makes the engine trade.
+`L2Translator` (`crates/replay/src/translate.rs`) keeps a line of synthetic orders at every price in the engine so each level's total always equals Coinbase's. A level that grows gets a new order for the difference at the back of the line. A level that shrinks loses orders from the back; a partly removed order is shrunk with `Command::Reduce`, which keeps its place in line, as size decreases do on real exchanges. (An earlier version cancelled and re-added the remainder, which silently moved a bot waiting behind it forward: an optimistic bias.) Within a message, shrinking levels are applied before growing ones, so a price that flips from ask to bid never makes the engine trade.
 _Why:_ new orders really do join the back. Cancels can come from anywhere, and assuming "from the back" is pessimistic for a bot waiting in line: orders ahead of it never disappear, so backtests won't overstate how fast it gets filled. Trades (from `market_trades`) will consume from the front once the bot is in the loop (Phase 4); the assumption can become a setting (back / front / proportional) to compare.
 _Checked:_ on a real 15,882-message recording, the engine's book matched Coinbase's at the top after every message and at every level at the end, with zero unexpected trades or rejections (361,872 commands, 0.24 s).
 
@@ -138,6 +138,12 @@ The ~21% unfilled volume breaks down as: the engine's level already drained by e
 
 `crates/py` (`import lobster`) wraps `Engine` with PyO3 0.30. Each method converts Python values into engine types, calls the engine, and converts the events back. Sides are the strings `"buy"`/`"sell"`; prices and quantities stay integers. Events are one flat `Event` class with a `kind` field. `crates/py/lobster.pyi` describes the module for editors. The crate is a workspace member but not a default member, because it's built by `maturin` rather than `cargo build`.
 _Why:_ all logic stays in Rust where it's tested; the bindings can't drift from the engine's behavior. Plain strings and ints keep Python strategy code simple, and the integer-only rule (decision #1) holds across the language boundary.
+
+### 13. The backtest: the bot shares the engine with the replayed market
+
+`Backtest` (`crates/replay/src/backtest.rs`) replays a recording through `L2Translator` while a bot sends orders into the same engine. Bot orders use ids from `FIRST_BOT_ID` (2^62) up; the translator never cancels them and doesn't count them toward Coinbase's totals. A bot order fills only when a replayed trade reaches it in line, when new Coinbase liquidity crosses it, or when it crosses the book itself. Every bot command arrives `latency_ns` after it's sent (default 10 ms, about the measured feed lag), so a cancel can lose the race to a fill and be rejected, like on a real exchange. Fills pay maker or taker fees in basis points, rounded against the bot. Money is exact: `cash` is in tick-lots ($0.01 × 1 satoshi = $1e-10); PnL is cash plus position valued at the mid.
+_Why:_ sharing one engine means queue position, partial fills and price-time priority all come from the same tested matching code as everything else. Latency and fees are the two things that most often make a paper strategy look better than it is.
+_Known bias:_ the replayed market can't react to the bot (if the bot takes liquidity, Coinbase's next update may "put it back"), so the bot should trade small relative to the book.
 
 ## Known limitations (to address later)
 
