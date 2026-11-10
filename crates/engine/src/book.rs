@@ -46,18 +46,52 @@ impl OrderBook {
     /// best price first, and oldest order first at each price. Whatever is
     /// left over rests on the book at the order's own price.
     pub fn submit(&mut self, mut order: Order) -> Vec<Trade> {
+        let trades =
+            self.take_liquidity(order.id, order.side, &mut order.quantity, Some(order.price));
+
+        // Whatever didn't fill waits on the book at its own price
+        if order.quantity.0 > 0 {
+            self.rest(order);
+        }
+
+        trades
+    }
+
+    /// Submits a market order: trade `quantity` right now at whatever prices
+    /// the book offers, and returns the trades it produced.
+    ///
+    /// A market order has no price limit, so it keeps walking through price
+    /// levels until it is filled or the other side runs out. It never rests:
+    /// if the book is too thin, the unfilled remainder is dropped.
+    pub fn submit_market(&mut self, id: OrderId, side: Side, mut quantity: Quantity) -> Vec<Trade> {
+        self.take_liquidity(id, side, &mut quantity, None)
+    }
+
+    /// The matching loop shared by limit and market orders.
+    ///
+    /// Trades an incoming order against the opposite side, best price first
+    /// and oldest order first at each price, shrinking `remaining` as it fills.
+    /// `limit` is the worst price the taker will accept, or `None` for a
+    /// market order that accepts any price.
+    fn take_liquidity(
+        &mut self,
+        taker_id: OrderId,
+        side: Side,
+        remaining: &mut Quantity,
+        limit: Option<Price>,
+    ) -> Vec<Trade> {
         let mut trades = Vec::new();
 
         // A buy trades against asks, a sell trades against bids
-        let opposite = match order.side {
+        let opposite = match side {
             Side::Buy => &mut self.asks,
             Side::Sell => &mut self.bids,
         };
 
-        // Keep going until the order is fully filled or stops crossing
-        while order.quantity.0 > 0 {
+        // Keep going until the order is fully filled or hits its limit
+        while remaining.0 > 0 {
             // Best opposite price: lowest ask for a buy, highest bid for a sell
-            let best_level = match order.side {
+            let best_level = match side {
                 Side::Buy => opposite.first_entry(),
                 Side::Sell => opposite.last_entry(),
             };
@@ -67,28 +101,33 @@ impl OrderBook {
                 break;
             };
 
-            // Best price is too expensive (or too cheap), so stop matching
+            // Stop if the best price is past our limit (market orders have none)
             let level_price = *level.key();
-            if !order.crosses(level_price) {
+            let within_limit = match (side, limit) {
+                (_, None) => true,
+                (Side::Buy, Some(limit)) => level_price <= limit,
+                (Side::Sell, Some(limit)) => level_price >= limit,
+            };
+            if !within_limit {
                 break;
             }
 
             // Fill against the orders at this price, front of the line first
             let queue = level.get_mut();
-            while order.quantity.0 > 0 {
+            while remaining.0 > 0 {
                 let Some(resting) = queue.front_mut() else {
                     break;
                 };
 
                 // Trade the smaller of the two remaining quantities
-                let fill = order.quantity.0.min(resting.quantity.0);
+                let fill = remaining.0.min(resting.quantity.0);
                 trades.push(Trade {
                     maker_order_id: resting.id,
-                    taker_order_id: order.id,
+                    taker_order_id: taker_id,
                     price: level_price, // Always the maker's price
                     quantity: Quantity(fill),
                 });
-                order.quantity.0 -= fill;
+                remaining.0 -= fill;
                 resting.quantity.0 -= fill;
 
                 // Resting order fully filled, so it leaves the line
@@ -103,11 +142,6 @@ impl OrderBook {
             if queue.is_empty() {
                 level.remove();
             }
-        }
-
-        // Whatever didn't fill waits on the book at its own price
-        if order.quantity.0 > 0 {
-            self.rest(order);
         }
 
         trades
@@ -407,5 +441,52 @@ mod tests {
         let cancelled = book.cancel(OrderId(2)).unwrap();
         assert_eq!(cancelled.quantity, Quantity(6));
         assert_eq!(book.best_bid(), None);
+    }
+
+    #[test]
+    fn market_buy_walks_the_book_with_no_price_limit() {
+        let mut book = OrderBook::new();
+        book.submit(order(1, Side::Sell, 100, 5));
+        book.submit(order(2, Side::Sell, 105, 5));
+        book.submit(order(3, Side::Sell, 200, 5));
+        let trades = book.submit_market(OrderId(4), Side::Buy, Quantity(12));
+
+        // Takes every level in order, no matter how expensive
+        assert_eq!(
+            summary(&trades),
+            vec![(1, 4, 100, 5), (2, 4, 105, 5), (3, 4, 200, 2)]
+        );
+        assert_eq!(book.quantity_at(Side::Sell, Price(200)), Quantity(3));
+    }
+
+    #[test]
+    fn market_sell_hits_the_highest_bids_first() {
+        let mut book = OrderBook::new();
+        book.submit(order(1, Side::Buy, 98, 5));
+        book.submit(order(2, Side::Buy, 100, 5));
+        let trades = book.submit_market(OrderId(3), Side::Sell, Quantity(7));
+
+        assert_eq!(summary(&trades), vec![(2, 3, 100, 5), (1, 3, 98, 2)]);
+    }
+
+    #[test]
+    fn market_order_never_rests_on_the_book() {
+        let mut book = OrderBook::new();
+        book.submit(order(1, Side::Sell, 100, 3));
+        let trades = book.submit_market(OrderId(2), Side::Buy, Quantity(10));
+
+        // Only 3 was available; the other 7 is dropped, not left as a bid
+        assert_eq!(summary(&trades), vec![(1, 2, 100, 3)]);
+        assert_eq!(book.best_bid(), None);
+        assert_eq!(book.order_count(), 0);
+    }
+
+    #[test]
+    fn market_order_on_an_empty_book_does_nothing() {
+        let mut book = OrderBook::new();
+        let trades = book.submit_market(OrderId(1), Side::Buy, Quantity(5));
+
+        assert!(trades.is_empty());
+        assert_eq!(book.order_count(), 0);
     }
 }
