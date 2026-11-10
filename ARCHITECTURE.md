@@ -151,6 +151,11 @@ _Known bias:_ the replayed market can't react to the bot (if the bot takes liqui
 `strategies/harness.py` runs any strategy (an object with `name` and `on_tick(bt)`) on a fresh backtest of the same recording and computes the same metrics for each: fills, position, max drawdown, markouts at 1/5/30 s, and PnL split into **spread capture** (fill price vs. the mid at the moment of the fill), **inventory** (what the position did afterwards) and **fees**. `strategies/strats.py` holds the strategies, each changing one thing from the previous one (v1 naive → v1b keep queue place → v2 inventory skew); `strategies/compare.py` prints them side by side.
 _Why:_ changing one thing at a time tells you what each idea is actually worth. The PnL breakdown separates "earned the spread" from "got lucky or unlucky on price", which a single PnL number hides.
 
+### 15. Walk-forward evaluation: tune on earlier data, test on later data
+
+`strategies/evaluate.py` cuts every recording that has trades into equal windows, puts the earlier ~60% in a training set and the later ~40% in a test set (time order, never shuffled), grid-searches each strategy family's parameters on training only, then runs the chosen settings untouched on the test set. It reports both, with $/hour, Sharpe, spread capture, fees and windows won.
+_Why:_ choosing parameters on the same data you report results on is the most common way backtests lie. The gap between train and test is a direct measure of overfitting, and only the test numbers count. Sharpe is annualized over 365 days because crypto trades around the clock; with hours rather than months of data, it's a rough guide.
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.
