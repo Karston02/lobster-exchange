@@ -31,12 +31,35 @@ lobster-exchange is a simulated exchange plus a market-making bot. Real market d
 
 ## The engine's contract
 
-The engine is a pure state machine: **commands go in, events come out.**
+The engine is a pure state machine: **commands go in, events come out.** `Engine::process(command)` is the only way to change its state. The types live in `crates/engine/src/messages.rs`.
 
-- **Commands:** `NewOrder`, `Cancel` (later: `Modify`)
-- **Events:** `Accepted`, `Trade`, `Cancelled`, `Rejected`
+**Commands**
+
+- `NewLimit { id, side, price, quantity }`: trade at `price` or better; any remainder rests.
+- `NewMarket { id, side, quantity }`: trade now at any price; any remainder is cancelled.
+- `Cancel { id }`: remove a resting order.
+
+**Events**, in the order they happen:
+
+- `Accepted { id }`: a new order passed validation. Always first, before its trades.
+- `Trade(Trade)`: two orders matched, at the maker's price.
+- `Cancelled { id, remaining, reason }`: an order left the book unfilled. `reason` is `Requested` (a `Cancel` command) or `NoLiquidity` (a market order ran out of opposite orders).
+- `Rejected { id, reason }`: the command was refused and nothing changed. `reason` is `ZeroQuantity`, `ZeroPrice`, `DuplicateOrderId` or `UnknownOrderId`.
 
 It does no I/O, no networking, no clocks, and no randomness. Everything else in the system talks to it through this one interface.
+
+## Code layout (`crates/engine`)
+
+| File              | Responsibility                                                              | Depends on                  |
+| ----------------- | --------------------------------------------------------------------------- | --------------------------- |
+| `src/types.rs`    | Domain vocabulary: `Side`, `Price`, `Quantity`, `OrderId`, `Order`, `Trade` | nothing                     |
+| `src/book.rs`     | `OrderBook`: storing orders and matching them                               | `types`                     |
+| `src/messages.rs` | The contract: `Command`, `Event`, reasons                                   | `types`                     |
+| `src/engine.rs`   | `Engine`: validation, rejections, turning book results into events          | `book`, `messages`, `types` |
+| `src/lib.rs`      | Declares modules and re-exports the public API                              | everything                  |
+| `tests/engine.rs` | Integration tests that use only the public API                              | the crate                   |
+
+Dependencies only point "down" this table, never in a cycle. Unit tests live next to the code they test (`#[cfg(test)] mod tests`); integration tests live in `tests/`.
 
 ## Key design decisions
 
@@ -69,7 +92,13 @@ _Why:_ real matching engines (LMAX, most exchanges) do this. Locks would slow th
 
 _Why:_ the engine needs raw speed and correctness, which Rust gives. Strategies need fast iteration and data tools (numpy, pandas), which Python gives. PyO3 connects them with little overhead.
 
+### 6. The book is mechanism, the engine is policy
+
+`OrderBook` only knows _how_ to store and match orders, and assumes its inputs are valid. `Engine` decides _what is allowed_ (rejections) and reports results as events. The book's mutating methods are `pub(crate)`, so outside code can only change state through `Engine::process`; it can still read the book through `engine.book()`.
+_Why:_ each part has one job and can be tested on its own, the matching loop stays small and fast, and there is exactly one door into the engine, which keeps the deterministic replay guarantee easy to uphold.
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.
+- **Duplicate ids are only checked against resting orders:** an id from an order that already filled or was cancelled can be reused. Tracking every id ever seen would grow memory forever; we'll revisit if the replayer needs stricter checks.
 - **No latency yet:** in reality, our orders reach the exchange a few milliseconds late. We'll add simulated latency so the backtest isn't unrealistically optimistic.
