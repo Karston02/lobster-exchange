@@ -223,6 +223,15 @@ _Coalescing:_ the stream can send many updates a second. Prices are merged as th
 _Changing symbols:_ when the held symbols change, the feed reconnects with the new list instead of re-subscribing on the open connection, because schwab-py says subscription calls aren't safe to run alongside message handling.
 _Regular session first:_ like the REST quotes, `REGULAR_MARKET_LAST_PRICE` is preferred over `LAST_PRICE`, so after-hours trades don't move the day's numbers.
 
+### 24. Charts: Schwab candles, Lightweight Charts, one wrapper file
+
+`/api/candles?symbol=&timeframe=` returns candles in cents from Schwab's price history (`dashboard/server/market/`). The Charts page draws them with TradingView's open-source Lightweight Charts (v5).
+_Timeframes:_ Schwab has 1, 5, 15 and 30-minute, daily and weekly candles. 1h and 4h are built on the server from 30-minute candles, with periods starting at the 9:30 AM Eastern open (9:30, 10:30, ...; 4h splits the day at 1:30), as TradingView does for US stocks. Only the regular session is requested. How far back each loads: 1m 10 days (Schwab keeps about 48), 5m 60 days, 15m 120 days, 1h and 4h 270 days (about 9 months), D 10 years, W 20 years.
+_One wrapper file:_ every library call lives in `pages/charts/lightweight.ts`. The drawing tools (2d) will sit on top of it, and if the library changes, only that file does.
+_Time zones:_ Lightweight Charts shows times in UTC, so each timestamp is shifted by the browser's offset at that moment (DST included) before drawing.
+_URL as state:_ symbol and timeframe live in the query string, so Home's holding links, bookmarks and the back button all work.
+_Attribution:_ the library's license asks for TradingView attribution; its small logo stays on (the default).
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.

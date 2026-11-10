@@ -9,8 +9,8 @@ Run from the repo root with the venv active:
 Then start the web page (see dashboard/README.md). It listens on
 LOBSTER_HOST:LOBSTER_PORT (http://127.0.0.1:8000 by default).
 
-Routes: /api/status, /api/account, /api/portfolio, /api/quotes and
-/api/orders (Schwab, see account/),
+Routes: /api/status, /api/account, /api/portfolio, /api/quotes,
+/api/orders (Schwab, see account/), /api/candles (charts, see market/),
 /ws/live (live account updates, see live/), /api/recordings,
 /api/strategies and /ws/replay.
 
@@ -38,6 +38,7 @@ from account import SchwabService, SchwabUnavailable  # noqa: E402
 from config import get_settings  # noqa: E402
 from db import open_database  # noqa: E402
 from live import LiveFeed  # noqa: E402
+from market import TIMEFRAMES  # noqa: E402
 from session import STRATEGIES, Session, list_recordings  # noqa: E402
 
 
@@ -105,6 +106,21 @@ async def quotes(symbols: str) -> dict:
     except SchwabUnavailable as error:
         raise HTTPException(503, {"reason": error.reason, "message": error.message}) from None
     return {"quotes": {symbol: asdict(quote) for symbol, quote in found.items()}}
+
+
+@app.get("/api/candles")
+async def candles(symbol: str, timeframe: str = "D") -> dict:
+    """Price history for a chart, e.g. /api/candles?symbol=AAPL&timeframe=1h. Prices in cents."""
+    symbol = symbol.strip().upper()
+    if not SYMBOL.match(symbol):
+        raise HTTPException(400, "symbol: a ticker like AAPL")
+    if timeframe not in TIMEFRAMES:
+        raise HTTPException(400, f"timeframe: one of {', '.join(TIMEFRAMES)}")
+    try:
+        found = await schwab().candles(symbol, timeframe)
+    except SchwabUnavailable as error:
+        raise HTTPException(503, {"reason": error.reason, "message": error.message}) from None
+    return {"symbol": symbol, "timeframe": timeframe, "candles": [asdict(c) for c in found]}
 
 
 @app.get("/api/orders")

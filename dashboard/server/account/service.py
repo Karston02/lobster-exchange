@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from config import SchwabSettings
+from market import Candle, fetch_candles
 
 from .models import Account, Order
 from .parse import parse_accounts, parse_orders
@@ -71,6 +72,11 @@ class SchwabService:
         """Today's price and change for each symbol, e.g. ["SPY"]."""
         key = "quotes:" + ",".join(sorted(symbols))
         return await self._cached(key, lambda client: self._fetch_quotes(client, symbols))
+
+    async def candles(self, symbol: str, timeframe: str) -> list[Candle]:
+        """Price history for a chart (see market/). Cached like everything else."""
+        key = f"candles:{symbol}:{timeframe}"
+        return await self._cached(key, lambda client: fetch_candles(client, symbol, timeframe, self._now()))
 
     async def orders(self) -> list[Order]:
         """Orders still waiting to fill, plus any from the last day."""

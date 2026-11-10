@@ -1,7 +1,7 @@
 // A tiny router for six pages: the URL path picks the page, and links change
 // the path without reloading. Small enough not to need a routing library.
 
-import { useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from "react";
+import { useMemo, useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from "react";
 
 const listeners = new Set<() => void>();
 
@@ -19,9 +19,15 @@ export function usePath(): string {
   return useSyncExternalStore(subscribe, () => window.location.pathname);
 }
 
-/** Goes to `path` without a page reload. */
+/** The URL's query, e.g. ?symbol=AAPL&tf=1h. Re-renders when it changes. */
+export function useSearchParams(): URLSearchParams {
+  const search = useSyncExternalStore(subscribe, () => window.location.search);
+  return useMemo(() => new URLSearchParams(search), [search]);
+}
+
+/** Goes to `path` (which may include a ?query) without a page reload. */
 export function navigate(path: string) {
-  if (path === window.location.pathname) return;
+  if (path === window.location.pathname + window.location.search) return;
   window.history.pushState(null, "", path);
   listeners.forEach((listener) => listener());
 }

@@ -1,0 +1,107 @@
+/* Charts fills the window below the top bar. */
+
+.charts-page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 57px); /* the top bar is 56px plus its hairline */
+}
+
+.chart-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.symbol-input {
+  width: 110px;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.symbol-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.timeframes {
+  display: flex;
+  gap: 2px;
+}
+
+.timeframes button {
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.timeframes button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.timeframes button[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--active);
+}
+
+.chart-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.chart-area,
+.chart-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.legend {
+  position: absolute;
+  top: 10px;
+  left: 14px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none; /* never block the crosshair */
+}
+
+.legend b {
+  font-weight: 400;
+}
+
+.legend b:not(.gain):not(.loss) {
+  color: var(--text);
+}
+
+.legend-symbol {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.chart-note {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  z-index: 3;
+  pointer-events: none;
+}

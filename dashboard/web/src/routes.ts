@@ -3,7 +3,8 @@
 import type { ComponentType } from "react";
 import { Backtests } from "./pages/Backtests";
 import { Home } from "./pages/home/Home";
-import { Charts, ForwardTests, Ideas, NotFound } from "./pages/placeholders";
+import { Charts } from "./pages/charts/Charts";
+import { ForwardTests, Ideas, NotFound } from "./pages/placeholders";
 import { Portfolio } from "./pages/portfolio/Portfolio";
 
 export interface Route {
