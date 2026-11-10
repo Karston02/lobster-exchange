@@ -134,6 +134,11 @@ _Measured_ on a 2,224-trade recording: a fill's book change is stamped a median 
 
 The ~21% unfilled volume breaks down as: the engine's level already drained by earlier trades or cancels (~12%), levels smaller than the trade (~4%), prices that never appeared in the level2 feed at all (~5%, liquidity added and taken between updates), and better prices resting (~0.3%). The book itself stays exact: 0 level mismatches at the end. For a bot, unfilled trade volume means missed fills, which errs on the pessimistic side.
 
+### 12. Python bindings are a thin layer over the engine
+
+`crates/py` (`import lobster`) wraps `Engine` with PyO3 0.30. Each method converts Python values into engine types, calls the engine, and converts the events back. Sides are the strings `"buy"`/`"sell"`; prices and quantities stay integers. Events are one flat `Event` class with a `kind` field. `crates/py/lobster.pyi` describes the module for editors. The crate is a workspace member but not a default member, because it's built by `maturin` rather than `cargo build`.
+_Why:_ all logic stays in Rust where it's tested; the bindings can't drift from the engine's behavior. Plain strings and ints keep Python strategy code simple, and the integer-only rule (decision #1) holds across the language boundary.
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.
