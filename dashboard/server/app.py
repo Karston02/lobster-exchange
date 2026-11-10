@@ -9,7 +9,8 @@ Run from the repo root with the venv active:
 Then start the web page (see dashboard/README.md). It listens on
 LOBSTER_HOST:LOBSTER_PORT (http://127.0.0.1:8000 by default).
 
-Routes: /api/status, /api/account and /api/orders (Schwab, see account/),
+Routes: /api/status, /api/account, /api/portfolio, /api/quotes and
+/api/orders (Schwab, see account/),
 /api/recordings, /api/strategies and /ws/replay.
 
 The websocket at /ws/replay takes its settings as query parameters, then
@@ -19,6 +20,7 @@ a "done" message at the end. The page can send {"type": "pause"},
 """
 
 import asyncio
+import re
 import sys
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -70,6 +72,32 @@ async def account() -> dict:
     except SchwabUnavailable as error:
         raise HTTPException(503, {"reason": error.reason, "message": error.message}) from None
     return {"accounts": [asdict(a) for a in accounts]}
+
+
+@app.get("/api/portfolio")
+async def portfolio() -> dict:
+    """All accounts added together: total, today's change, cash, holdings by symbol."""
+    try:
+        return asdict(await schwab().portfolio())
+    except SchwabUnavailable as error:
+        raise HTTPException(503, {"reason": error.reason, "message": error.message}) from None
+
+
+SYMBOL = re.compile(r"^[A-Z0-9.$/-]{1,12}$")
+MAX_SYMBOLS = 20
+
+
+@app.get("/api/quotes")
+async def quotes(symbols: str) -> dict:
+    """Today's price and change, e.g. /api/quotes?symbols=SPY,QQQ"""
+    wanted = sorted({s.strip().upper() for s in symbols.split(",") if s.strip()})
+    if not wanted or len(wanted) > MAX_SYMBOLS or not all(SYMBOL.match(s) for s in wanted):
+        raise HTTPException(400, f"symbols: 1 to {MAX_SYMBOLS} tickers, comma separated")
+    try:
+        found = await schwab().quotes(wanted)
+    except SchwabUnavailable as error:
+        raise HTTPException(503, {"reason": error.reason, "message": error.message}) from None
+    return {"quotes": {symbol: asdict(quote) for symbol, quote in found.items()}}
 
 
 @app.get("/api/orders")

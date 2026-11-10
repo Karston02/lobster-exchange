@@ -42,6 +42,10 @@ class FakeClient:
         self.calls += 1
         return FakeResponse(json.loads((FIXTURES / "accounts.json").read_text()), self.status)
 
+    async def get_quotes(self, symbols):
+        self.calls += 1
+        return FakeResponse({s: {"quote": {"lastPrice": 101.0, "closePrice": 100.0}} for s in symbols}, self.status)
+
     async def get_orders_for_all_linked_accounts(self):
         return FakeResponse(json.loads((FIXTURES / "orders.json").read_text()), self.status)
 
@@ -126,3 +130,29 @@ def test_status_when_logged_out(tmp_path):
 
     assert status["connected"] is False
     assert status["problem"] == "not_logged_in"
+
+
+def test_quotes_are_cached_per_symbol_list(tmp_path):
+    client = FakeClient()
+    svc = service(tmp_path, client)
+
+    async def run():
+        first = await svc.quotes(["SPY"])
+        await svc.quotes(["SPY"])
+        await svc.quotes(["SPY", "QQQ"])
+        return first
+
+    assert asyncio.run(run())["SPY"].change_cents == 100
+    assert client.calls == 2
+
+
+def test_portfolio_reuses_the_cached_accounts(tmp_path):
+    client = FakeClient()
+    svc = service(tmp_path, client)
+
+    async def run():
+        await svc.accounts()
+        return await svc.portfolio()
+
+    assert asyncio.run(run()).account_count == 2
+    assert client.calls == 1

@@ -46,6 +46,14 @@ a {
   color: var(--muted);
 }
 
+.gain {
+  color: var(--gain);
+}
+
+.loss {
+  color: var(--loss);
+}
+
 /* Page widths: one narrow reading column, or wide for tables and charts */
 .page {
   margin: 0 auto;

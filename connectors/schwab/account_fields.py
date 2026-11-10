@@ -1,4 +1,4 @@
-"""Lists the fields Schwab's account and order responses really contain.
+"""Lists the fields Schwab's account, order and quote responses really contain.
 
 Names and counts only, never values, so the output is safe to paste into a
 chat. Use it to check the server's parser (dashboard/server/account/parse.py)
@@ -20,7 +20,10 @@ async def main() -> None:
         accounts.raise_for_status()
         orders = await client.get_orders_for_all_linked_accounts()
         orders.raise_for_status()
-        for title, data in (("accounts", accounts.json()), ("orders (last 60 days)", orders.json())):
+        quotes = await client.get_quotes(["SPY"])
+        quotes.raise_for_status()
+        sections = (("accounts", accounts.json()), ("orders (last 60 days)", orders.json()), ("quotes (SPY)", quotes.json()))
+        for title, data in sections:
             print(f"\n{title}:")
             for path, count in sorted(field_names(data).items()):
                 print(f"  {path}  ({count})")

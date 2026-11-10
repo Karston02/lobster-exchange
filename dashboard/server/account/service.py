@@ -14,6 +14,8 @@ from config import SchwabSettings
 
 from .models import Account, Order
 from .parse import parse_accounts, parse_orders
+from .portfolio import Portfolio, summarize
+from .quotes import Quote, parse_quotes
 from .token import TokenStatus, token_status
 
 CACHE_SECONDS = 10.0  # Schwab allows ~120 requests a minute; pages poll far less than that
@@ -52,6 +54,15 @@ class SchwabService:
 
     async def accounts(self) -> list[Account]:
         return await self._cached("accounts", self._fetch_accounts)
+
+    async def portfolio(self) -> Portfolio:
+        """Every account added together (uses the same cached account data)."""
+        return summarize(await self.accounts())
+
+    async def quotes(self, symbols: list[str]) -> dict[str, Quote]:
+        """Today's price and change for each symbol, e.g. ["SPY"]."""
+        key = "quotes:" + ",".join(sorted(symbols))
+        return await self._cached(key, lambda client: self._fetch_quotes(client, symbols))
 
     async def orders(self) -> list[Order]:
         """Orders still waiting to fill, plus any from the last day."""
@@ -139,6 +150,11 @@ class SchwabService:
         response = await client.get_accounts(fields=[client.Account.Fields.POSITIONS])
         response.raise_for_status()
         return parse_accounts(response.json())
+
+    async def _fetch_quotes(self, client: Any, symbols: list[str]) -> dict[str, Quote]:
+        response = await client.get_quotes(symbols)
+        response.raise_for_status()
+        return parse_quotes(response.json())
 
     async def _fetch_orders(self, client: Any) -> list[Order]:
         response = await client.get_orders_for_all_linked_accounts()  # the last 60 days

@@ -2,7 +2,8 @@
 
 import type { ComponentType } from "react";
 import { Backtests } from "./pages/Backtests";
-import { Charts, ForwardTests, Home, Ideas, NotFound, Portfolio } from "./pages/placeholders";
+import { Home } from "./pages/home/Home";
+import { Charts, ForwardTests, Ideas, NotFound, Portfolio } from "./pages/placeholders";
 
 export interface Route {
   path: string;

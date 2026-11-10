@@ -206,6 +206,13 @@ _Account numbers:_ masked to `…1234` inside the parser, so the full number nev
 _Caching:_ one client, one Schwab call at a time (an `asyncio.Lock`), answers reused for 10 seconds. Schwab allows about 120 requests a minute; the page and the status dot together stay far below that.
 _Checked against reality:_ `connectors/schwab/account_fields.py` lists the field names Schwab really sends (no values). The first run showed that cash accounts have no `buyingPower` (the parser falls back to `cashAvailableForTrading`), that some positions have no `description`, and that times look like `2026-11-10T15:00:00+0000`. The test fixtures now mirror that shape.
 
+### 22. The server adds up the portfolio; the browser only formats
+
+`/api/portfolio` returns every account added together: total value, today's change, the value at yesterday's close, cash, and holdings merged by symbol (`account/portfolio.py`). The page turns cents into text and divides for percentages, nothing more.
+_Why:_ Home, Portfolio and later alerts must agree on "today's change". If each page summed it, they'd drift. It also follows the rule that the server does the work.
+_Today's change_ is the sum of each position's `currentDayProfitLoss` from Schwab; the percent is that change over yesterday's value (total minus change). SPY's change comes from `/api/quotes`, cached like everything else. It uses Schwab's `regular` block (the 8:30 to 3:00 Central session) rather than `quote`, which after hours includes extended-hours trades; that's the "SPY was up X% today" number.
+_No chart yet:_ Schwab doesn't keep your portfolio's value over time, so the Home chart needs the server to record it first (roadmap, step 2).
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.
