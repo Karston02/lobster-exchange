@@ -27,8 +27,9 @@ lobster-exchange is a simulated exchange plus a market-making bot. Real market d
 | Market data replayer            | Rust             | `crates/replay` | 3     |
 | Python bindings                 | Rust (PyO3)      | `crates/py`     | 4     |
 | Strategies + backtests          | Python           | `strategies/`   | 4     |
-| Live server                     | Rust (axum)      | `crates/server` | 5     |
-| Dashboard                       | TypeScript/React | `dashboard/`    | 5     |
+| Live server (dashboard backend) | Python (FastAPI) | `dashboard/server` | 5 |
+| Dashboard (web page) | TypeScript/React (Vite) | `dashboard/web` | 5 |
+| Schwab connector (stocks)       | Python (schwab-py) | `connectors/schwab` | 6 |
 
 ## The engine's contract
 
@@ -155,6 +156,23 @@ _Why:_ changing one thing at a time tells you what each idea is actually worth. 
 
 `strategies/evaluate.py` cuts every recording that has trades into equal windows, puts the earlier ~60% in a training set and the later ~40% in a test set (time order, never shuffled), grid-searches each strategy family's parameters on training only, then runs the chosen settings untouched on the test set. It reports both, with $/hour, Sharpe, spread capture, fees and windows won.
 _Why:_ choosing parameters on the same data you report results on is the most common way backtests lie. The gap between train and test is a direct measure of overfitting, and only the test numbers count. Sharpe is annualized over 365 days because crypto trades around the clock; with hours rather than months of data, it's a rough guide.
+
+### 16. The dashboard server is Python, streaming one tick per market second
+
+`dashboard/server/app.py` (FastAPI) runs a `Session` (`session.py`: a `lobster.Backtest` plus a strategy from `strategies/strats.py`) and streams a JSON snapshot per second of market time over a websocket: the top 12 levels per side, the bot's orders with their queue position, new fills, position, PnL and fees. The page (`dashboard/web`, Vite + React + TypeScript, charts in plain SVG) can pause, resume and change speed mid-replay. Prices stay integer ticks on the wire; time goes as seconds since the start and order ids as strings, because nanosecond timestamps and ids from 2^62 exceed what a JavaScript number holds exactly (2^53).
+_Why:_ the strategies are Python, so the server that runs them is too (the original plan was a Rust axum server, which could only have replayed the market). The replay logic is kept out of the web layer so it can be tested on its own.
+
+### 17. One strategy, three brokers: backtest, paper, live (Phase 6, in progress)
+
+Strategies already talk only to the `Backtest` methods (`submit_limit`, `cancel`, `open_orders`, `position`, `best_bid`, ...). Phase 6 turns that into a `Broker` interface with three implementations, so the same strategy code runs everywhere:
+
+- `SimBroker`: recorded data replayed through our engine (today's `Backtest`).
+- `PaperBroker`: live Schwab data fed into our engine with simulated fills. schwab-py's docs mention no paper-trading or sandbox environment, so our engine is the paper environment.
+- `SchwabBroker`: live data and real orders through schwab-py, behind dry-run-by-default, size/position/daily-loss/order-rate limits, a kill switch, regular-hours-only trading, and reconciliation against Schwab's order statuses.
+
+Running paper and live side by side measures how well the simulator predicts real fills.
+_First step:_ `connectors/schwab/record.py` records Schwab's level one quotes, NASDAQ/NYSE book snapshots and 1-minute bars (record raw, parse later); `inspect_recording.py` shows their real shape before any parser is written. Credentials live in a gitignored `.env`; the token file lives outside the repo.
+_Known differences from Coinbase:_ Schwab's book streams cover single exchanges, not the whole US market; schwab-py documents no trade (time and sales) stream, so trades must be inferred from level one changes; retail orders are routed by the broker, so live queue position isn't visible; latency is a retail API's (hundreds of ms).
 
 ## Known limitations (to address later)
 

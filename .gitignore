@@ -29,3 +29,7 @@ profile.json*
 
 # Charts and results from strategy runs
 strategies/output/
+
+# Broker credentials and tokens (never commit)
+.env
+*token*.json
