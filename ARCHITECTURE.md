@@ -146,6 +146,11 @@ _Why:_ all logic stays in Rust where it's tested; the bindings can't drift from 
 _Why:_ sharing one engine means queue position, partial fills and price-time priority all come from the same tested matching code as everything else. Latency and fees are the two things that most often make a paper strategy look better than it is.
 _Known bias:_ the replayed market can't react to the bot (if the bot takes liquidity, Coinbase's next update may "put it back"), so the bot should trade small relative to the book.
 
+### 14. Strategies are compared one change at a time, with PnL broken down
+
+`strategies/harness.py` runs any strategy (an object with `name` and `on_tick(bt)`) on a fresh backtest of the same recording and computes the same metrics for each: fills, position, max drawdown, markouts at 1/5/30 s, and PnL split into **spread capture** (fill price vs. the mid at the moment of the fill), **inventory** (what the position did afterwards) and **fees**. `strategies/strats.py` holds the strategies, each changing one thing from the previous one (v1 naive → v1b keep queue place → v2 inventory skew); `strategies/compare.py` prints them side by side.
+_Why:_ changing one thing at a time tells you what each idea is actually worth. The PnL breakdown separates "earned the spread" from "got lucky or unlucky on price", which a single PnL number hides.
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.
