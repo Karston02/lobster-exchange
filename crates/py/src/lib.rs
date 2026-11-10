@@ -1,12 +1,19 @@
 //! Python bindings for the matching engine, built with PyO3.
 //!
-//! Python sees a module called `lobster` with two classes, `Engine` and
-//! `Event`. Sides are the strings `"buy"` and `"sell"`; prices and quantities
-//! are plain integers (ticks and lots), the same as in Rust.
+//! Python sees a module called `lobster` with:
+//!
+//! - `Engine` and `Event`: the matching engine on its own (this file).
+//! - `Backtest`, `Order` and `Fill`: a recording replayed through the engine
+//!   while a Python strategy trades in it (`backtest.rs`).
+//!
+//! Sides are the strings `"buy"` and `"sell"`; prices and quantities are plain
+//! integers (ticks and lots), the same as in Rust. Money is integer tick-lots.
 //!
 //! Each wrapper is thin on purpose: it converts Python values into the
 //! engine's types, calls the engine, and converts the results back. All the
 //! logic stays in `lobster-engine`, where it's tested.
+
+mod backtest;
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -16,13 +23,21 @@ use lobster_engine::{
 };
 
 /// Converts `"buy"` / `"sell"` into a `Side`, or raises `ValueError`.
-fn parse_side(side: &str) -> PyResult<Side> {
+pub(crate) fn parse_side(side: &str) -> PyResult<Side> {
     match side {
         "buy" => Ok(Side::Buy),
         "sell" => Ok(Side::Sell),
         other => Err(PyValueError::new_err(format!(
             "side must be \"buy\" or \"sell\", not {other:?}"
         ))),
+    }
+}
+
+/// The string Python sees for a side.
+pub(crate) fn side_name(side: Side) -> String {
+    match side {
+        Side::Buy => "buy".into(),
+        Side::Sell => "sell".into(),
     }
 }
 
@@ -256,6 +271,8 @@ impl PyEngine {
 /// The `lobster` Python module.
 #[pymodule]
 mod lobster {
+    #[pymodule_export]
+    use super::backtest::{PyBacktest, PyFill, PyOrder};
     #[pymodule_export]
     use super::{PyEngine, PyEvent};
 }
