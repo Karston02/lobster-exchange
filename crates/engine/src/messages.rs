@@ -23,6 +23,15 @@ pub enum Command {
         side: Side,
         quantity: Quantity,
     },
+    /// Immediate-or-cancel: buy or sell up to `quantity` at `price` or better,
+    /// right now. Unlike a limit order, any unfilled remainder is cancelled
+    /// instead of resting on the book.
+    NewImmediateOrCancel {
+        id: OrderId,
+        side: Side,
+        price: Price,
+        quantity: Quantity,
+    },
     /// Remove a resting order from the book.
     Cancel { id: OrderId },
 }
@@ -51,7 +60,8 @@ pub enum Event {
 pub enum CancelReason {
     /// The owner sent a `Cancel` command.
     Requested,
-    /// A market order ran out of opposite orders to trade against.
+    /// A market or immediate-or-cancel order ran out of opposite orders it
+    /// could trade against (at any price, or within its limit).
     NoLiquidity,
 }
 
