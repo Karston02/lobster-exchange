@@ -1,10 +1,14 @@
 //! The order book: every resting order, organized by side and price.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use crate::types::{Order, Price, Quantity, Side, Trade};
+use crate::types::{Order, OrderId, Price, Quantity, Side, Trade};
 
-/// represents all of the price leves (tree so they're kept sorted).
+/// One side of the book: every price level, mapped to its queue of orders.
+///
+/// - `BTreeMap` keeps the prices sorted, so the best price is always at one end.
+/// - Each `VecDeque` is the line of orders at that price, oldest at the front
+///   (time priority: first in line gets filled first).
 type Levels = BTreeMap<Price, VecDeque<Order>>;
 
 /// A limit order book with a bid (buy) side and an ask (sell) side.
@@ -12,91 +16,96 @@ type Levels = BTreeMap<Price, VecDeque<Order>>;
 pub struct OrderBook {
     bids: Levels,
     asks: Levels,
+    /// Where each resting order lives (its side and price), so cancel can jump
+    /// straight to the right price level instead of searching the whole book.
+    index: HashMap<OrderId, (Side, Price)>,
 }
 
 impl OrderBook {
-    /// An empty book.
+    /// Creates an empty book.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /**
-     * Put an order on the book to "rest" (or wait) in line at its price.
-     * This doesn't check for matches, that's the matching step.
-     */
+    /// Puts an order on the book to rest (wait) in line at its price.
+    ///
+    /// This does not check for matches; use [`OrderBook::submit`] for that.
     pub fn rest(&mut self, order: Order) {
+        self.index.insert(order.id, (order.side, order.price));
         let levels = match order.side {
             Side::Buy => &mut self.bids,
             Side::Sell => &mut self.asks,
         };
-        // find queue for this price, creating empty one if it doesn't exist yet.
+        // Find the queue for this price (creating it if needed) and join the back of the line.
         levels.entry(order.price).or_default().push_back(order);
     }
 
-    /**
-     * Submit a new limit order. It trades against the opposite side for as long
-     * as it crosses: best price first, and oldest order first at each price.
-     * Whatever is left over rests on the book. Returns the trades that happened.
-     */
+    /// Submits a new limit order and returns the trades it produced.
+    ///
+    /// The order trades against the opposite side for as long as it crosses:
+    /// best price first, and oldest order first at each price. Whatever is
+    /// left over rests on the book at the order's own price.
     pub fn submit(&mut self, mut order: Order) -> Vec<Trade> {
         let mut trades = Vec::new();
 
-        // a buy trades against asks, a sell trades against bids
+        // A buy trades against asks, a sell trades against bids
         let opposite = match order.side {
             Side::Buy => &mut self.asks,
             Side::Sell => &mut self.bids,
         };
 
-        // keep going until the order is fully filled or stops crossing
+        // Keep going until the order is fully filled or stops crossing
         while order.quantity.0 > 0 {
-            // best opposite price: lowest ask for a buy, highest bid for a sell
+            // Best opposite price: lowest ask for a buy, highest bid for a sell
             let best_level = match order.side {
                 Side::Buy => opposite.first_entry(),
                 Side::Sell => opposite.last_entry(),
             };
 
-            // other side is empty, nothing left to trade against
+            // Other side is empty, nothing left to trade against
             let Some(mut level) = best_level else {
                 break;
             };
 
-            // best price is too expensive (or too cheap), so stop matching
+            // Best price is too expensive (or too cheap), so stop matching
             let level_price = *level.key();
             if !order.crosses(level_price) {
                 break;
             }
 
-            // fill against the orders at this price, front of the line first
+            // Fill against the orders at this price, front of the line first
             let queue = level.get_mut();
             while order.quantity.0 > 0 {
                 let Some(resting) = queue.front_mut() else {
                     break;
                 };
 
-                // trade the smaller of the two remaining quantities
+                // Trade the smaller of the two remaining quantities
                 let fill = order.quantity.0.min(resting.quantity.0);
                 trades.push(Trade {
                     maker_order_id: resting.id,
                     taker_order_id: order.id,
-                    price: level_price, // always the maker's price
+                    price: level_price, // Always the maker's price
                     quantity: Quantity(fill),
                 });
                 order.quantity.0 -= fill;
                 resting.quantity.0 -= fill;
 
-                // resting order fully filled, so it leaves the line
+                // Resting order fully filled, so it leaves the line
                 if resting.quantity.0 == 0 {
+                    let filled_id = resting.id;
                     queue.pop_front();
+                    self.index.remove(&filled_id);
                 }
             }
 
-            // price level is now empty, so remove it from the book
+            // Price level is now empty, so remove it from the book
             if queue.is_empty() {
                 level.remove();
             }
         }
 
-        // whatever didn't fill waits on the book at its own price
+        // Whatever didn't fill waits on the book at its own price
         if order.quantity.0 > 0 {
             self.rest(order);
         }
@@ -104,26 +113,55 @@ impl OrderBook {
         trades
     }
 
-    /// The highest price anyone is willing to buy at, or `None` if there are no bids.
+    /// Removes a resting order from the book and returns it.
+    ///
+    /// Returns `None` if no order with that id is resting: it was already
+    /// filled, already cancelled, or never existed.
+    pub fn cancel(&mut self, id: OrderId) -> Option<Order> {
+        // Look up where the order lives instead of searching every price level.
+        let (side, price) = self.index.remove(&id)?;
+        let levels = match side {
+            Side::Buy => &mut self.bids,
+            Side::Sell => &mut self.asks,
+        };
+        let queue = levels.get_mut(&price)?;
+
+        // Find the order's place in line. This only scans one price level.
+        let position = queue.iter().position(|order| order.id == id)?;
+        let order = queue.remove(position)?;
+
+        // That was the last order at this price, so the level goes away.
+        if queue.is_empty() {
+            levels.remove(&price);
+        }
+        Some(order)
+    }
+
+    /// Returns how many orders are resting on the book, across both sides.
+    pub fn order_count(&self) -> usize {
+        self.index.len()
+    }
+
+    /// Returns the highest price anyone is willing to buy at, or `None` if there are no bids.
     pub fn best_bid(&self) -> Option<Price> {
-        // Bids: higher is better, so the best is the LAST (largest) key.
+        // Higher is better for bids, so the best is the last (largest) key.
         self.bids.last_key_value().map(|(price, _)| *price)
     }
 
-    /// The lowest price anyone is willing to sell at, or `None` if there are no asks.
+    /// Returns the lowest price anyone is willing to sell at, or `None` if there are no asks.
     pub fn best_ask(&self) -> Option<Price> {
-        // Asks: lower is better, so the best is the FIRST (smallest) key.
+        // Lower is better for asks, so the best is the first (smallest) key.
         self.asks.first_key_value().map(|(price, _)| *price)
     }
 
-    /// The gap between best ask and best bid, in ticks. `None` if either side is empty.
+    /// Returns the gap between best ask and best bid, in ticks. `None` if either side is empty.
     pub fn spread(&self) -> Option<u64> {
         let bid = self.best_bid()?;
         let ask = self.best_ask()?;
         Some(ask.0 - bid.0)
     }
 
-    /// Total quantity waiting at one price on one side (0 if nothing is there).
+    /// Returns the total quantity waiting at one price on one side (0 if nothing is there).
     pub fn quantity_at(&self, side: Side, price: Price) -> Quantity {
         let levels = match side {
             Side::Buy => &self.bids,
@@ -136,7 +174,7 @@ impl OrderBook {
         Quantity(total)
     }
 
-    /// The queue of orders at one price, front of the line first.
+    /// Returns the orders waiting at one price, front of the line first.
     pub fn orders_at(&self, side: Side, price: Price) -> Vec<&Order> {
         let levels = match side {
             Side::Buy => &self.bids,
@@ -204,11 +242,11 @@ mod tests {
             .iter()
             .map(|o| o.id.0)
             .collect();
-        assert_eq!(ids, vec![1, 2, 3]); // first come, first served
+        assert_eq!(ids, vec![1, 2, 3]); // First come, first served
         assert_eq!(book.quantity_at(Side::Buy, Price(100)), Quantity(10));
     }
 
-    /// shorthand for checking a trade: (maker id, taker id, price, quantity)
+    /// Flattens trades into `(maker id, taker id, price, quantity)` tuples for easy comparison.
     fn summary(trades: &[Trade]) -> Vec<(u64, u64, u64, u64)> {
         trades
             .iter()
@@ -241,15 +279,15 @@ mod tests {
         let trades = book.submit(order(2, Side::Buy, 100, 5));
 
         assert_eq!(summary(&trades), vec![(1, 2, 100, 5)]);
-        assert_eq!(book.best_ask(), None); // seller is gone
-        assert_eq!(book.best_bid(), None); // buyer didn't rest
+        assert_eq!(book.best_ask(), None); // Seller is gone
+        assert_eq!(book.best_bid(), None); // Buyer didn't rest
     }
 
     #[test]
     fn trade_happens_at_the_makers_price() {
         let mut book = OrderBook::new();
         book.submit(order(1, Side::Sell, 100, 5));
-        // willing to pay 105, but the seller only asked 100
+        // Willing to pay 105, but the seller only asked 100
         let trades = book.submit(order(2, Side::Buy, 105, 5));
 
         assert_eq!(summary(&trades), vec![(1, 2, 100, 5)]);
@@ -282,7 +320,7 @@ mod tests {
         book.submit(order(2, Side::Sell, 100, 5));
         let trades = book.submit(order(3, Side::Buy, 100, 7));
 
-        // order 1 arrived first, so it fills completely before order 2 gets anything
+        // Order 1 arrived first, so it fills completely before order 2 gets anything
         assert_eq!(summary(&trades), vec![(1, 3, 100, 5), (2, 3, 100, 2)]);
         assert_eq!(book.quantity_at(Side::Sell, Price(100)), Quantity(3));
     }
@@ -295,10 +333,79 @@ mod tests {
         book.submit(order(3, Side::Sell, 102, 5));
         let trades = book.submit(order(4, Side::Buy, 101, 12));
 
-        // takes all of 100 and 101, but 102 is above our limit
+        // Takes all of 100 and 101, but 102 is above our limit
         assert_eq!(summary(&trades), vec![(1, 4, 100, 5), (2, 4, 101, 5)]);
-        assert_eq!(book.best_bid(), Some(Price(101))); // leftover 2 rests
+        assert_eq!(book.best_bid(), Some(Price(101))); // Leftover 2 rests
         assert_eq!(book.quantity_at(Side::Buy, Price(101)), Quantity(2));
         assert_eq!(book.best_ask(), Some(Price(102)));
+    }
+
+    #[test]
+    fn cancel_removes_the_order_and_returns_it() {
+        let mut book = OrderBook::new();
+        book.submit(order(1, Side::Buy, 100, 5));
+
+        let cancelled = book.cancel(OrderId(1));
+        assert_eq!(cancelled, Some(order(1, Side::Buy, 100, 5)));
+        assert_eq!(book.best_bid(), None); // level emptied, so it's gone
+        assert_eq!(book.order_count(), 0);
+    }
+
+    #[test]
+    fn cancel_unknown_or_already_cancelled_order_returns_none() {
+        let mut book = OrderBook::new();
+        book.submit(order(1, Side::Buy, 100, 5));
+
+        assert_eq!(book.cancel(OrderId(99)), None); // never existed
+        assert!(book.cancel(OrderId(1)).is_some());
+        assert_eq!(book.cancel(OrderId(1)), None); // already cancelled
+    }
+
+    #[test]
+    fn cancel_from_middle_of_line_keeps_everyone_else_in_order() {
+        let mut book = OrderBook::new();
+        book.submit(order(1, Side::Sell, 100, 5));
+        book.submit(order(2, Side::Sell, 100, 5));
+        book.submit(order(3, Side::Sell, 100, 5));
+
+        book.cancel(OrderId(2));
+
+        let ids: Vec<u64> = book
+            .orders_at(Side::Sell, Price(100))
+            .iter()
+            .map(|o| o.id.0)
+            .collect();
+        assert_eq!(ids, vec![1, 3]);
+    }
+
+    #[test]
+    fn fully_filled_order_can_no_longer_be_cancelled() {
+        let mut book = OrderBook::new();
+        book.submit(order(1, Side::Sell, 100, 5));
+        book.submit(order(2, Side::Buy, 100, 5)); // fills order 1 completely
+
+        assert_eq!(book.cancel(OrderId(1)), None);
+        assert_eq!(book.order_count(), 0);
+    }
+
+    #[test]
+    fn partially_filled_order_cancels_with_what_is_left() {
+        let mut book = OrderBook::new();
+        book.submit(order(1, Side::Sell, 100, 10));
+        book.submit(order(2, Side::Buy, 100, 4)); // order 1 has 6 left
+
+        let cancelled = book.cancel(OrderId(1)).unwrap();
+        assert_eq!(cancelled.quantity, Quantity(6));
+    }
+
+    #[test]
+    fn leftover_taker_can_be_cancelled() {
+        let mut book = OrderBook::new();
+        book.submit(order(1, Side::Sell, 100, 4));
+        book.submit(order(2, Side::Buy, 100, 10)); // 6 left over, rests as a bid
+
+        let cancelled = book.cancel(OrderId(2)).unwrap();
+        assert_eq!(cancelled.quantity, Quantity(6));
+        assert_eq!(book.best_bid(), None);
     }
 }
