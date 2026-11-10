@@ -24,7 +24,8 @@ cargo bench    # run the benchmarks
 ## Benchmarks
 
 ```sh
-cargo bench    # run the benchmarks (results also saved as HTML in target/criterion/report/index.html)
+cargo bench                      # run the benchmarks (HTML report in target/criterion/report/index.html)
+cargo bench -- --baseline v1     # compare against the saved v1 baseline
 ```
 
 Measured with [criterion](https://github.com/bheisler/criterion.rs) on a MacBook Pro (Apple Silicon), engine v1 (`BTreeMap` + `VecDeque` + `HashMap`):
