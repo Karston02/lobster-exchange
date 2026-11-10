@@ -472,6 +472,7 @@ name = "lobster-py"
 version = "0.1.0"
 dependencies = [
  "lobster-engine",
+ "lobster-replay",
  "pyo3",
 ]
 

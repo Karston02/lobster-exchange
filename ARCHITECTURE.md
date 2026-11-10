@@ -137,6 +137,7 @@ The ~21% unfilled volume breaks down as: the engine's level already drained by e
 ### 12. Python bindings are a thin layer over the engine
 
 `crates/py` (`import lobster`) wraps `Engine` with PyO3 0.30. Each method converts Python values into engine types, calls the engine, and converts the events back. Sides are the strings `"buy"`/`"sell"`; prices and quantities stay integers. Events are one flat `Event` class with a `kind` field. `crates/py/lobster.pyi` describes the module for editors. The crate is a workspace member but not a default member, because it's built by `maturin` rather than `cargo build`.
+`lobster.Backtest` (in `crates/py/src/backtest.rs`) exposes the backtest the same way. The strategy loop is plain Python (`while not bt.market_finished(): bt.run_until(...)`), but each call does a lot of work in Rust (one `run_until` can replay thousands of market events), so the loop crosses the language boundary once per decision, not once per market event.
 _Why:_ all logic stays in Rust where it's tested; the bindings can't drift from the engine's behavior. Plain strings and ints keep Python strategy code simple, and the integer-only rule (decision #1) holds across the language boundary.
 
 ### 13. The backtest: the bot shares the engine with the replayed market
