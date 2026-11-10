@@ -6,7 +6,7 @@ The fixtures follow Schwab's documented shapes with made-up numbers.
 import json
 from pathlib import Path
 
-from account.money import cents, mask
+from account.money import cents, mask, per_unit
 from account.parse import parse_accounts, parse_orders
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -21,6 +21,12 @@ def test_cents_rounds_half_up_without_float_noise():
     assert cents(12.345) == 1235
     assert cents(-4.05) == -405
     assert cents(None) == 0
+
+
+def test_per_unit_rounds_halves_up():
+    assert per_unit(29250, 100) == 293
+    assert per_unit(387000, 7.5) == 51600
+    assert per_unit(100, 0) == 0
 
 
 def test_mask_keeps_only_the_last_four_digits():
@@ -79,3 +85,17 @@ def test_orders_parse_newest_first_with_open_flags():
     assert orders[0].price_cents is None  # market order
     assert not orders[0].is_open
     assert working.account_last4 == "…0000"
+
+
+def test_option_prices_are_per_share_like_schwab_quotes_them():
+    option = {
+        "longQuantity": 1,
+        "shortQuantity": 0,
+        "averagePrice": 7.06,
+        "marketValue": 292.5,
+        "instrument": {"assetType": "OPTION", "symbol": "NFLX  280121C00100000"},
+    }
+    (account,) = parse_accounts([{"securitiesAccount": {"positions": [option]}}])
+
+    assert account.positions[0].price_cents == 293  # $292.50 / (1 contract x 100 shares), rounded
+    assert account.positions[0].market_value_cents == 29250

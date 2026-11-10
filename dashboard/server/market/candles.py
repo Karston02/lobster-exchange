@@ -1,4 +1,9 @@
-"""Candles (open, high, low, close, volume over one period), and joining them into longer ones."""
+"""Candles (open, high, low, close, volume over one period), and joining them into longer ones.
+
+Prices are whole numbers in units of 10^-decimals of a dollar, where
+`decimals` belongs to the whole series: 2 (cents) for most stocks, more for
+cheap ones and for coins like SHIB-USD, whose price moves in 0.00000001 steps.
+"""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -7,11 +12,20 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Candle:
     time: int  # when the period starts, in Unix seconds (UTC)
-    open_cents: int
-    high_cents: int
-    low_cents: int
-    close_cents: int
-    volume: int
+    open: int
+    high: int
+    low: int
+    close: int
+    volume: float  # shares or coins; crypto volume is fractional. Display only.
+
+
+@dataclass(frozen=True)
+class CandleSeries:
+    symbol: str
+    timeframe: str
+    source: str  # "schwab" or "coinbase"
+    decimals: int  # prices are in units of 10^-decimals
+    candles: list[Candle]
 
 
 def combine(candles: list[Candle], bucket: Callable[[int], int]) -> list[Candle]:
@@ -28,12 +42,18 @@ def combine(candles: list[Candle], bucket: Callable[[int], int]) -> list[Candle]
             last = out[-1]
             out[-1] = Candle(
                 time=start,
-                open_cents=last.open_cents,
-                high_cents=max(last.high_cents, c.high_cents),
-                low_cents=min(last.low_cents, c.low_cents),
-                close_cents=c.close_cents,
+                open=last.open,
+                high=max(last.high, c.high),
+                low=min(last.low, c.low),
+                close=c.close,
                 volume=last.volume + c.volume,
             )
         else:
-            out.append(Candle(start, c.open_cents, c.high_cents, c.low_cents, c.close_cents, c.volume))
+            out.append(Candle(start, c.open, c.high, c.low, c.close, c.volume))
     return out
+
+
+def sorted_unique(candles: list[Candle]) -> list[Candle]:
+    """Ascending by time with one candle per time (the last one seen wins), as charts require."""
+    by_time = {c.time: c for c in candles}
+    return [by_time[t] for t in sorted(by_time)]

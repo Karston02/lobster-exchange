@@ -6,7 +6,7 @@ zero or empty rather than crashing.
 """
 
 from .models import Account, Order, Position
-from .money import cents, mask
+from .money import cents, mask, per_unit
 
 # Order statuses that mean "still waiting", from schwab-py's Client.Order.Status
 OPEN_STATUSES = {
@@ -40,17 +40,22 @@ def _account(raw: dict) -> Account:
     )
 
 
+# One option contract covers 100 shares, and its price is quoted per share
+CONTRACT_SHARES = {"OPTION": 100}
+
+
 def _position(raw: dict) -> Position:
     instrument = raw.get("instrument", {})
     quantity = float(raw.get("longQuantity", 0)) - float(raw.get("shortQuantity", 0))
     value = cents(raw.get("marketValue"))
+    shares_each = CONTRACT_SHARES.get(instrument.get("assetType", ""), 1)
     return Position(
         symbol=instrument.get("symbol", "?"),
         description=instrument.get("description", ""),
         asset_type=instrument.get("assetType", ""),
         quantity=quantity,
         average_price_cents=cents(raw.get("averagePrice")),
-        price_cents=round(value / quantity) if quantity else 0,
+        price_cents=per_unit(value, quantity * shares_each),
         market_value_cents=value,
         day_change_cents=cents(raw.get("currentDayProfitLoss")),
         open_pnl_cents=cents(raw.get("longOpenProfitLoss", 0)) + cents(raw.get("shortOpenProfitLoss", 0)),

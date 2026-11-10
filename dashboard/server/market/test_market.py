@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from market.candles import Candle, combine
-from market.history import fetch_candles, parse_candles
+from market.history import fetch_candles, parse_candles, stock_decimals
 from market.timeframes import session_bucket
 
 NY = ZoneInfo("America/New_York")
@@ -71,11 +71,11 @@ def test_parse_sorts_and_drops_duplicate_times():
         ]
     }
 
-    candles = parse_candles(data)
+    candles = parse_candles(data, 2)
 
     assert [c.time for c in candles] == [1, 2]
-    assert candles[1].close_cents == 300  # the later duplicate wins
-    assert parse_candles({"empty": True}) == []
+    assert candles[1].close == 300  # the later duplicate wins
+    assert parse_candles({"empty": True}, 2) == []
 
 
 def test_fetch_asks_for_the_regular_session_and_builds_hours():
@@ -95,11 +95,19 @@ def test_fetch_asks_for_the_regular_session_and_builds_hours():
             return Response()
 
     now = datetime(2026, 11, 10, 22, 0, tzinfo=timezone.utc)
-    hours = asyncio.run(fetch_candles(Client(), "AAPL", "1h", now))
+    series = asyncio.run(fetch_candles(Client(), "AAPL", "1h", now))
+    hours = series.candles
 
     symbol, kwargs = calls[0]
     assert symbol == "AAPL"
     assert kwargs["need_extended_hours_data"] is False
     assert kwargs["end_datetime"] == now
     assert [h.volume for h in hours] == [20, 20]
-    assert hours[0].high_cents == 200 and hours[0].low_cents == 50
+    assert hours[0].high == 200 and hours[0].low == 50
+    assert series.decimals == 2 and series.source == "schwab"
+
+
+def test_stocks_under_a_dollar_get_four_decimals():
+    assert stock_decimals({"candles": [{"close": 12.21}]}) == 2
+    assert stock_decimals({"candles": [{"close": 0.4567}]}) == 4
+    assert parse_candles({"candles": [{"close": 0.4567, "datetime": 1000}]}, 4)[0].close == 4567

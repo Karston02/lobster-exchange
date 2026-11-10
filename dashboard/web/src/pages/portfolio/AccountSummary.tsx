@@ -6,7 +6,7 @@ export function AccountSummary({ account }: { account: Account }) {
   const today = percentOf(account.day_change_cents, account.total_value_cents - account.day_change_cents);
   return (
     <section aria-label="Account summary">
-      <div className="quiet">{account.name}</div>
+      <div className="quiet">{account.name || account.last4}</div>
       <div className="num portfolio-value">{money(account.total_value_cents)}</div>
       <dl className="portfolio-stats">
         <div>

@@ -1,19 +1,21 @@
 // Candles as the chart page uses them: dollars (for drawing only) and Unix seconds.
 
-/** One candle from GET /api/candles (prices in cents). */
-export interface CandleCents {
+/** One candle from GET /api/candles: prices are whole numbers of 10^-decimals dollars. */
+export interface CandleUnits {
   time: number;
-  open_cents: number;
-  high_cents: number;
-  low_cents: number;
-  close_cents: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
   volume: number;
 }
 
 export interface CandlesResponse {
   symbol: string;
   timeframe: string;
-  candles: CandleCents[];
+  source: "schwab" | "coinbase";
+  decimals: number; // 2 for most stocks, up to 8 for coins like SHIB-USD
+  candles: CandleUnits[];
 }
 
 /** A candle ready to draw. Dollars are floats here, but only for display. */
@@ -26,14 +28,10 @@ export interface Bar {
   volume: number;
 }
 
-export const toBar = (c: CandleCents): Bar => ({
-  time: c.time,
-  open: c.open_cents / 100,
-  high: c.high_cents / 100,
-  low: c.low_cents / 100,
-  close: c.close_cents / 100,
-  volume: c.volume,
-});
+export function toBar(c: CandleUnits, decimals: number): Bar {
+  const unit = 10 ** decimals;
+  return { time: c.time, open: c.open / unit, high: c.high / unit, low: c.low / unit, close: c.close / unit, volume: c.volume };
+}
 
 export const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "D", "W"] as const;
 export type Timeframe = (typeof TIMEFRAMES)[number];

@@ -232,6 +232,14 @@ _Time zones:_ Lightweight Charts shows times in UTC, so each timestamp is shifte
 _URL as state:_ symbol and timeframe live in the query string, so Home's holding links, bookmarks and the back button all work.
 _Attribution:_ the library's license asks for TradingView attribution; its small logo stays on (the default).
 
+### 25. Crypto candles from Coinbase, and per-series decimals
+
+A symbol with a dash (BTC-USD, ETH-USDC) is a Coinbase product; anything else is a Schwab stock. Coinbase candles come from its public Exchange API (`market/coinbase.py`), no login needed.
+_Paging:_ Coinbase returns at most 300 candles per request, newest first, so the server walks backwards page by page (4 to 8 pages per timeframe) and stops when a page comes back empty. Answers are cached for 30 seconds, since Coinbase asks that history not be polled often.
+_Timeframes:_ Coinbase serves 1m, 5m, 15m, 1h, 6h and 1D. 4h is built from 1h and weekly from daily. Crypto trades around the clock, so periods align to UTC (4h at 00:00, 04:00, ...), and weeks start on Monday.
+_Decimals per series, not cents:_ SHIB-USD moves in $0.00000001 steps, so cents would flatten it to $0.00. Candle prices are still whole numbers (never floats), but in units of 10^-decimals, and each series says its `decimals`: Coinbase's `quote_increment` for crypto (2 for BTC-USD, 8 for SHIB-USD), 2 for stocks, 4 for stocks under $1. The chart's price axis and legend show that many places. Account money stays in cents.
+_Volume is a float:_ crypto volume is fractional (0.5 BTC). It's only displayed, never used for money.
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.

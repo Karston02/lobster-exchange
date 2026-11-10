@@ -14,7 +14,7 @@ class Position:
     asset_type: str  # EQUITY, COLLECTIVE_INVESTMENT (ETFs), ...
     quantity: float  # negative when short
     average_price_cents: int  # what you paid per share, on average
-    price_cents: int  # today's price per share: market value / quantity
+    price_cents: int  # today's price per share (for options, per share of the contract's 100)
     market_value_cents: int
     day_change_cents: int  # today's profit or loss on this position
     open_pnl_cents: int  # gain or loss since bought

@@ -13,7 +13,7 @@ export function AccountPicker({ accounts, selected, onSelect }: Props) {
     <div role="group" aria-label="Account" className="picker">
       {accounts.map((a) => (
         <button key={a.last4} type="button" aria-pressed={a.last4 === selected} onClick={() => onSelect(a.last4)}>
-          {a.name}
+          {a.name || a.last4}
         </button>
       ))}
     </div>

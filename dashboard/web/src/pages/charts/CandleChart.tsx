@@ -7,10 +7,11 @@ interface Props {
   symbol: string;
   bars: Bar[];
   intraday: boolean;
+  decimals: number;
 }
 
 /** The chart canvas plus the OHLC legend. The chart is made once and fed new bars. */
-export function CandleChart({ symbol, bars, intraday }: Props) {
+export function CandleChart({ symbol, bars, intraday, decimals }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<Chart | null>(null);
   const [hovered, setHovered] = useState<Bar | null>(null);
@@ -25,15 +26,15 @@ export function CandleChart({ symbol, bars, intraday }: Props) {
   }, []);
 
   useEffect(() => {
-    chart.current?.setBars(bars, intraday);
+    chart.current?.setBars(bars, intraday, decimals);
     setHovered(null);
-  }, [bars, intraday]);
+  }, [bars, intraday, decimals]);
 
   const shown = hovered ?? bars[bars.length - 1] ?? null;
   return (
     <div className="chart-area">
       <div ref={box} className="chart-canvas" />
-      {shown && <Legend symbol={symbol} bar={shown} />}
+      {shown && <Legend symbol={symbol} bar={shown} decimals={decimals} />}
     </div>
   );
 }

@@ -28,7 +28,7 @@ const THEME = {
 const BARS_IN_VIEW = 150; // how many recent bars to show at first
 
 export interface CandleChart {
-  setBars(bars: Bar[], intraday: boolean): void;
+  setBars(bars: Bar[], intraday: boolean, decimals: number): void;
   destroy(): void;
 }
 
@@ -78,9 +78,10 @@ export function createCandleChart(container: HTMLElement, onHover: (bar: Bar | n
   chart.subscribeCrosshairMove(hover);
 
   return {
-    setBars(bars, intraday) {
+    setBars(bars, intraday, decimals) {
       byTime = new Map(bars.map((b) => [chartTime(b.time), b]));
       chart.applyOptions({ timeScale: { timeVisible: intraday } });
+      candles.applyOptions({ priceFormat: { type: "price", precision: decimals, minMove: 10 ** -decimals } });
       candles.setData(bars.map((b) => ({ time: chartTime(b.time), open: b.open, high: b.high, low: b.low, close: b.close })));
       volume.setData(
         bars.map((b) => ({

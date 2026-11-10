@@ -38,7 +38,7 @@ from account import SchwabService, SchwabUnavailable  # noqa: E402
 from config import get_settings  # noqa: E402
 from db import open_database  # noqa: E402
 from live import LiveFeed  # noqa: E402
-from market import TIMEFRAMES  # noqa: E402
+from market import TIMEFRAMES, CoinbaseMarket, SourceUnavailable, UnknownSymbol, is_crypto  # noqa: E402
 from session import STRATEGIES, Session, list_recordings  # noqa: E402
 
 
@@ -49,10 +49,12 @@ async def lifespan(_: FastAPI):
     settings = get_settings()
     open_database(settings.db_path).close()
     app.state.schwab = SchwabService(settings.schwab, account_names=settings.account_names)
+    app.state.coinbase = CoinbaseMarket()
     app.state.live = LiveFeed(app.state.schwab)
     app.state.live.start()  # runs on the server whether or not a page is open
     yield
     await app.state.live.stop()
+    await app.state.coinbase.close()
     await app.state.schwab.close()
 
 
@@ -91,7 +93,7 @@ async def portfolio() -> dict:
         raise HTTPException(503, {"reason": error.reason, "message": error.message}) from None
 
 
-SYMBOL = re.compile(r"^[A-Z0-9.$/-]{1,12}$")
+SYMBOL = re.compile(r"^[A-Z0-9.$/-]{1,15}$")
 MAX_SYMBOLS = 20
 
 
@@ -110,17 +112,26 @@ async def quotes(symbols: str) -> dict:
 
 @app.get("/api/candles")
 async def candles(symbol: str, timeframe: str = "D") -> dict:
-    """Price history for a chart, e.g. /api/candles?symbol=AAPL&timeframe=1h. Prices in cents."""
+    """Price history for a chart: stocks from Schwab, crypto (BTC-USD, ...) from Coinbase.
+    e.g. /api/candles?symbol=AAPL&timeframe=1h. Prices are whole numbers in units of
+    10^-decimals; `decimals` is in the response."""
     symbol = symbol.strip().upper()
     if not SYMBOL.match(symbol):
-        raise HTTPException(400, "symbol: a ticker like AAPL")
+        raise HTTPException(400, "symbol: a ticker like AAPL, or a coin pair like BTC-USD")
     if timeframe not in TIMEFRAMES:
         raise HTTPException(400, f"timeframe: one of {', '.join(TIMEFRAMES)}")
     try:
-        found = await schwab().candles(symbol, timeframe)
+        if is_crypto(symbol):
+            series = await app.state.coinbase.candles(symbol, timeframe)
+        else:
+            series = await schwab().candles(symbol, timeframe)
     except SchwabUnavailable as error:
         raise HTTPException(503, {"reason": error.reason, "message": error.message}) from None
-    return {"symbol": symbol, "timeframe": timeframe, "candles": [asdict(c) for c in found]}
+    except UnknownSymbol as error:
+        raise HTTPException(404, str(error)) from None
+    except SourceUnavailable as error:
+        raise HTTPException(503, str(error)) from None
+    return asdict(series)
 
 
 @app.get("/api/orders")
