@@ -69,6 +69,7 @@ class Settings:
     data_dir: Path  # market data recordings
     state_dir: Path  # login token and database; outside the repo
     db_path: Path  # the SQLite database file
+    account_names: dict[str, str]  # last four digits (or "*" for any other) -> display name
     host: str
     port: int
     schwab: SchwabSettings
@@ -88,6 +89,7 @@ def load_settings(env_file: Path | None = ENV_FILE, environ: Mapping[str, str] |
         db_path=_path(get("LOBSTER_DB_PATH", str(state_dir / "lobster.db"))),
         host=_local_host(get("LOBSTER_HOST", "127.0.0.1")),
         port=_port(get("LOBSTER_PORT", "8000")),
+        account_names=_account_names(get("LOBSTER_ACCOUNT_NAMES", "")),
         schwab=SchwabSettings(
             api_key=_secret(values.get("SCHWAB_API_KEY")),
             app_secret=_secret(values.get("SCHWAB_APP_SECRET")),
@@ -122,3 +124,14 @@ def _port(text: str) -> int:
     if not text.isdigit() or not 0 < int(text) < 65536:
         raise SettingError(f"LOBSTER_PORT={text!r} is not a port number")
     return int(text)
+
+
+def _account_names(text: str) -> dict[str, str]:
+    """ "4428=Roth IRA,*=Schwab Cash" -> {"4428": "Roth IRA", "*": "Schwab Cash"} """
+    names = {}
+    for part in filter(None, (p.strip() for p in text.split(","))):
+        digits, equals, name = (piece.strip() for piece in part.partition("="))
+        if not equals or not name or not (digits == "*" or (len(digits) == 4 and digits.isdigit())):
+            raise SettingError(f"LOBSTER_ACCOUNT_NAMES: write it like 4428=Roth IRA,*=Schwab Cash (got {part!r})")
+        names[digits] = name
+    return names
