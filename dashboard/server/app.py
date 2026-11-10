@@ -6,7 +6,7 @@ Run from the repo root with the venv active (uv pip install fastapi "uvicorn[sta
     python dashboard/server/app.py
 
 Then start the web page (see dashboard/README.md). The server listens on
-http://127.0.0.1:8000.
+LOBSTER_HOST:LOBSTER_PORT (http://127.0.0.1:8000 by default).
 
 The websocket at /ws/replay takes its settings as query parameters, then
 sends a "hello" message, one "tick" message per second of market time, and
@@ -15,11 +15,17 @@ a "done" message at the end. The page can send {"type": "pause"},
 """
 
 import asyncio
+import sys
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-from session import STRATEGIES, Session, list_recordings
+# The settings package lives at the repo root
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from config import get_settings  # noqa: E402
+from session import STRATEGIES, Session, list_recordings  # noqa: E402
 
 app = FastAPI(title="lobster-exchange dashboard")
 
@@ -94,4 +100,5 @@ async def replay(
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    settings = get_settings()
+    uvicorn.run(app, host=settings.host, port=settings.port)

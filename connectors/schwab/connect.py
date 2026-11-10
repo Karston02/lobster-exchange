@@ -1,50 +1,23 @@
-"""Shared Schwab setup: credentials and an authenticated async client.
+"""Shared Schwab setup: an authenticated async client.
 
-Credentials come from environment variables, or from a `.env` file at the
-repo root (gitignored), never from the code:
-
-    SCHWAB_API_KEY=...
-    SCHWAB_APP_SECRET=...
-    SCHWAB_CALLBACK_URL=https://127.0.0.1:8182      # must match your app exactly
-    SCHWAB_TOKEN_PATH=~/.lobster/schwab_token.json  # optional; outside the repo
+Credentials and the token's location come from the app's settings
+(`config/settings.py`), which read the environment or the gitignored `.env`
+at the repo root. See `.env.example` for the names.
 
 The token file is created by schwab-py the first time you log in (a browser
 opens) and refreshed automatically. Schwab's refresh tokens last about seven
 days; after that, schwab-py asks you to log in again.
 """
 
-import os
+import sys
 from pathlib import Path
 
 from schwab import auth
 
-ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_TOKEN_PATH = Path.home() / ".lobster" / "schwab_token.json"
+# The settings package lives at the repo root
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-
-def load_dotenv(path: Path = ROOT / ".env") -> None:
-    """Reads KEY=VALUE lines from `.env` into the environment (without overriding)."""
-    if not path.exists():
-        return
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-
-
-def setting(name: str, default: str | None = None) -> str:
-    value = os.environ.get(name, default)
-    if value is None:
-        raise SystemExit(f"missing {name}: set it in your environment or in {ROOT / '.env'}")
-    return value
-
-
-def token_path() -> Path:
-    path = Path(os.path.expanduser(setting("SCHWAB_TOKEN_PATH", str(DEFAULT_TOKEN_PATH))))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
+from config import get_settings  # noqa: E402
 
 
 def async_client():
@@ -52,12 +25,14 @@ def async_client():
 
     Opens a browser to log in if there's no valid token yet.
     """
-    load_dotenv()
+    schwab = get_settings().schwab
+    api_key, app_secret = schwab.credentials()
+    schwab.token_path.parent.mkdir(parents=True, exist_ok=True)
     return auth.easy_client(
-        api_key=setting("SCHWAB_API_KEY"),
-        app_secret=setting("SCHWAB_APP_SECRET"),
-        callback_url=setting("SCHWAB_CALLBACK_URL", "https://127.0.0.1:8182"),
-        token_path=str(token_path()),
+        api_key=api_key,
+        app_secret=app_secret,
+        callback_url=schwab.callback_url,
+        token_path=str(schwab.token_path),
         asyncio=True,
     )
 

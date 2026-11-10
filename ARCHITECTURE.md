@@ -174,6 +174,13 @@ Running paper and live side by side measures how well the simulator predicts rea
 _First step:_ `connectors/schwab/record.py` records Schwab's level one quotes, NASDAQ/NYSE book snapshots and 1-minute bars (record raw, parse later); `inspect_recording.py` shows their real shape before any parser is written. Credentials live in a gitignored `.env`; the token file lives outside the repo.
 _Known differences from Coinbase:_ Schwab's book streams cover single exchanges, not the whole US market; schwab-py documents no trade (time and sales) stream, so trades must be inferred from level one changes; retail orders are routed by the broker, so live queue position isn't visible; latency is a retail API's (hundreds of ms).
 
+### 18. One settings module; nothing assumes the laptop
+
+Every path, key, port and address is read in `config/settings.py`, from environment variables or the gitignored `.env` (environment wins). Everything else calls `get_settings()`.
+_Why:_ the app will move from the Mac to an always-on server. If paths and ports are settings, that move is a new `.env`, not a code hunt. Relative paths count from the repo root, so a script behaves the same from any folder.
+_Safety built in:_ secrets are wrapped in `Secret`, which prints as stars, so a stray print or log can't leak a key. The host must be local (`127.0.0.1`) until the app has a login (build step 8); anything else is refused at startup.
+_Why plain dataclasses, not pydantic-settings:_ no new dependency, and the loader takes the environment as an argument, so tests pass a dict instead of patching the real environment.
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.

@@ -7,7 +7,8 @@ during US market hours, from the repo root, with the venv active:
     python connectors/schwab/record.py AAPL SPY
     python connectors/schwab/record.py AAPL --no-book      # quotes and bars only
 
-Each connection writes a new file, `data/schwab/<start ns>.jsonl`. Every line
+Each connection writes a new file, `<data dir>/schwab/<start ns>.jsonl` (the data
+dir is the LOBSTER_DATA_DIR setting, `data/` by default). Every line
 is `{"recv_ns": <our receive time>, "service": "...", "msg": <the message>}`.
 Stop with Ctrl+C.
 
@@ -30,7 +31,7 @@ from pathlib import Path
 
 from schwab.streaming import StreamClient
 
-from connect import ROOT, async_client, first_account_number
+from connect import async_client, first_account_number, get_settings
 
 MIN_BACKOFF_S = 1
 MAX_BACKOFF_S = 60
@@ -106,7 +107,7 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("symbols", nargs="+", help="e.g. AAPL SPY")
     parser.add_argument("--no-book", action="store_true", help="skip the order book streams")
-    parser.add_argument("--out", type=Path, default=ROOT / "data" / "schwab")
+    parser.add_argument("--out", type=Path, default=get_settings().data_dir / "schwab")
     args = parser.parse_args()
     symbols = [s.upper() for s in args.symbols]
 

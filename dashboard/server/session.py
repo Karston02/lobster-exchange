@@ -7,15 +7,18 @@ and tested without any networking.
 import sys
 from pathlib import Path
 
-# The strategies and their harness live in strategies/ at the repo root
+# The settings package and the strategies (with their harness) live at the repo root
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "strategies"))
 
 import harness  # noqa: E402
+from config import get_settings  # noqa: E402
 from strats import AvellanedaStoikov, ImbalanceFilter, InventorySkew, KeepPlace, Naive  # noqa: E402
 from units import NS_PER_SECOND, lots, usd  # noqa: E402
 
-RECORDINGS = ROOT / harness.RECORDINGS
+# harness.RECORDINGS is data/coinbase/BTC-USD; keep the part below data/
+RECORDINGS = get_settings().data_dir / harness.RECORDINGS.relative_to("data")
 
 # key: (name, description, builder(size in lots) -> strategy)
 STRATEGIES = {

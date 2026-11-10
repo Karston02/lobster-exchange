@@ -13,9 +13,9 @@ import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from connect import ROOT
+from connect import get_settings
 
-RECORDINGS = ROOT / "data" / "schwab"
+RECORDINGS = get_settings().data_dir / "schwab"
 
 
 def field_names(value, prefix: str = "", out: Counter | None = None, depth: int = 0) -> Counter:
