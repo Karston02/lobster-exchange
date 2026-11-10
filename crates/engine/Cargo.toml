@@ -5,6 +5,12 @@ description = "A price-time priority limit order book matching engine"
 edition.workspace = true
 license.workspace = true
 
+[lib]
+# The library has no benchmarks of its own (they live in benches/), so skip it
+# during `cargo bench`. Otherwise criterion flags like --save-baseline get passed
+# to the standard test harness, which doesn't understand them.
+bench = false
+
 [dependencies]
 
 [dev-dependencies]
