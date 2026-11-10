@@ -1,7 +1,8 @@
 """Fetches candles from Schwab and turns them into our records.
 
 Schwab's response: {"symbol": ..., "empty": bool, "candles": [{"open", "high",
-"low", "close", "volume", "datetime" (Unix milliseconds)}]}. Only the regular
+"low", "close", "volume", "datetime" (Unix milliseconds)}]} (field names checked
+against a real response, Nov 2026). Only the regular
 session is requested, so intraday charts have no pre- or after-hours bars.
 """
 
