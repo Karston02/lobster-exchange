@@ -13,7 +13,14 @@ export interface ServerStatus {
     problem: SchwabProblem | null;
     message: string | null; // what to do about the problem
     accounts: string[]; // your names for them, else masked digits like "…1234"
+    login: LoginStatus; // the Log in button's progress
   };
+}
+
+export interface LoginStatus {
+  state: "idle" | "running" | "succeeded" | "failed";
+  message: string | null;
+  started_at: number | null;
 }
 
 export type StatusState = { kind: "loading" } | { kind: "offline" } | { kind: "online"; status: ServerStatus };

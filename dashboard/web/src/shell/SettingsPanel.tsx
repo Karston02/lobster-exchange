@@ -1,5 +1,6 @@
 import { dateTime } from "../format";
 import { timeLeft } from "./connection";
+import { LoginButton, needsLogin } from "./LoginButton";
 import type { StatusState } from "./useServerStatus";
 
 interface Props {
@@ -42,6 +43,12 @@ export function SettingsPanel({ id, state }: Props) {
         </p>
       )}
       {schwab?.message && <p className="hint">{schwab.message}</p>}
+      {schwab && (needsLogin(schwab.problem) || expiresSoon(schwab.login_expires_at)) && <LoginButton />}
     </div>
   );
+}
+
+/** Less than a day of login left: offer to log in early. */
+function expiresSoon(iso: string | null): boolean {
+  return iso !== null && new Date(iso).getTime() - Date.now() < 24 * 3_600_000;
 }

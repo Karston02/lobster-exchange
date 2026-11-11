@@ -1,5 +1,6 @@
 import type { Portfolio, Quotes } from "../../account/types";
 import { useLive } from "../../live/useLive";
+import { LoginButton, needsLogin } from "../../shell/LoginButton";
 import { ValueChart } from "../../components/valueChart/ValueChart";
 import { usePolling } from "../../usePolling";
 import { Holdings } from "./Holdings";
@@ -21,7 +22,10 @@ export function Home() {
   const spy = (useLiveData ? live.message!.quotes.SPY : quotes.data?.quotes.SPY) ?? null;
 
   if (!data && portfolio.loading) return <Page>Loading your portfolio…</Page>;
-  if (!data) return <Page>{portfolio.error?.message ?? "Couldn't load your portfolio."}</Page>;
+  if (!data)
+    return (
+      <Page login={needsLogin(portfolio.error?.reason)}>{portfolio.error?.message ?? "Couldn't load your portfolio."}</Page>
+    );
 
   return (
     <main className="page narrow home">
@@ -35,10 +39,11 @@ export function Home() {
   );
 }
 
-function Page({ children }: { children: string }) {
+function Page({ children, login = false }: { children: string; login?: boolean }) {
   return (
     <main className="page narrow">
       <p className="quiet">{children}</p>
+      {login && <LoginButton />}
     </main>
   );
 }

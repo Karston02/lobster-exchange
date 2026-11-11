@@ -74,3 +74,15 @@ def test_drawings_routes(client):
     assert client.put("/api/drawings/d1", json={**drawing, "points": []}).status_code == 422  # wrong shape
     assert client.delete("/api/drawings/d1").status_code == 200
     assert client.delete("/api/drawings/d1").status_code == 404
+
+
+class FakeLogin:
+    def start(self):
+        return {"state": "running", "message": None, "started_at": 1.0}
+
+
+def test_login_only_starts_from_a_json_request(client):
+    server.app.state.login = FakeLogin()
+
+    assert client.post("/api/schwab/login").status_code == 415  # a plain form post (what another site could send)
+    assert client.post("/api/schwab/login", json={}).json()["state"] == "running"

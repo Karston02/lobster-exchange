@@ -9,7 +9,7 @@ Run from the repo root with the venv active:
 Then start the web page (see dashboard/README.md). It listens on
 LOBSTER_HOST:LOBSTER_PORT (http://127.0.0.1:8000 by default).
 
-Routes: /api/status, /api/account, /api/portfolio, /api/quotes,
+Routes: /api/status, /api/schwab/login (the Log in button), /api/account, /api/portfolio, /api/quotes,
 /api/orders (Schwab, see account/), /api/candles (charts, see market/),
 /api/drawings (chart drawings, see drawings/), /api/history (recorded
 value over time, see history/),
@@ -34,12 +34,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 
 # The settings package lives at the repo root
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from account import SchwabService, SchwabUnavailable  # noqa: E402
+from account import LoginRunner, SchwabService, SchwabUnavailable  # noqa: E402
 from config import get_settings  # noqa: E402
 from db import connect, open_database  # noqa: E402
 from drawings import Drawing, delete_drawing, list_drawings, save_drawing  # noqa: E402
@@ -56,6 +56,7 @@ async def lifespan(_: FastAPI):
     settings = get_settings()
     open_database(settings.db_path).close()
     app.state.schwab = SchwabService(settings.schwab, account_names=settings.account_names)
+    app.state.login = LoginRunner()
     app.state.coinbase = CoinbaseMarket()
     app.state.ticks = TickHub()
     app.state.live = LiveFeed(app.state.schwab, on_tick=app.state.ticks.publish)
@@ -71,6 +72,7 @@ async def lifespan(_: FastAPI):
     app.state.recorder = HistoryRecorder(app.state.live, settings.db_path)
     app.state.recorder.start()  # the portfolio's value, every minute
     yield
+    await app.state.login.stop()
     await app.state.recorder.stop()
     await app.state.coinbase_trades.stop()
     await app.state.live.stop()
@@ -90,7 +92,20 @@ def schwab() -> SchwabService:
 @app.get("/api/status")
 async def status() -> dict:
     """Facts for the top bar's connection status. Never keys, tokens or full account numbers."""
-    return {"schwab": await schwab().status()}
+    return {"schwab": {**await schwab().status(), "login": app.state.login.status()}}
+
+
+@app.post("/api/schwab/login")
+async def schwab_login(request: Request) -> dict:
+    """Runs connectors/schwab/login.py: Schwab's login opens in the browser on this machine,
+    and you sign in there. Poll /api/status (schwab.login) to follow it.
+
+    Requires a JSON request: browsers won't let another website send one without
+    asking first (a CORS preflight, which this server never approves), so no other
+    page can trigger a login."""
+    if not request.headers.get("content-type", "").startswith("application/json"):
+        raise HTTPException(415, "send this as a JSON request")
+    return app.state.login.start()
 
 
 @app.get("/api/account")

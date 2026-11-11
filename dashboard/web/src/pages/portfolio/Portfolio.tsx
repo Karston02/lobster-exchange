@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Accounts, Orders } from "../../account/types";
 import { ValueChart } from "../../components/valueChart/ValueChart";
 import { useLive } from "../../live/useLive";
+import { LoginButton, needsLogin } from "../../shell/LoginButton";
 import type { ServerStatus } from "../../shell/useServerStatus";
 import { usePolling } from "../../usePolling";
 import { AccountDetails } from "./AccountDetails";
@@ -29,7 +30,8 @@ export function Portfolio() {
     : polled.data;
 
   if (!data && polled.loading) return <Message>Loading your accounts…</Message>;
-  if (!data) return <Message>{polled.error?.message ?? "Couldn't load your accounts."}</Message>;
+  if (!data)
+    return <Message login={needsLogin(polled.error?.reason)}>{polled.error?.message ?? "Couldn't load your accounts."}</Message>;
 
   const list = data.accounts;
   if (list.length === 0) return <Message>No accounts are linked to this Schwab login.</Message>;
@@ -65,10 +67,11 @@ export function Portfolio() {
   );
 }
 
-function Message({ children }: { children: string }) {
+function Message({ children, login = false }: { children: string; login?: boolean }) {
   return (
     <main className="page narrow">
       <p className="quiet">{children}</p>
+      {login && <LoginButton />}
     </main>
   );
 }

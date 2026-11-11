@@ -278,6 +278,14 @@ _Compared with SPY:_ for the whole portfolio, SPY's candles are scaled to start 
 _Size:_ about 1,440 rows per account per day, a few million rows a year; small for SQLite, and `WITHOUT ROWID` keeps each account's rows stored in time order.
 _The chart:_ a calm Lightweight Charts area line with no axes or grid, the dashed base line kept on screen through an `autoscaleInfoProvider`, and a hover readout. On 1D the live value extends the line to the current moment between recordings.
 
+### 30. The Log in button
+
+When Schwab needs a login (none yet, expired, or ending within a day), the Connections panel, Home and Portfolio show a "Log in to Schwab" button. It asks the server to run `connectors/schwab/login.py --no-prompt`, which opens Schwab's page in the browser; you sign in there, the token is saved, and the account service picks up the new token on its next request (it already watches for a new login).
+_A separate process:_ schwab-py's login starts a temporary HTTPS server on 127.0.0.1:8182 to catch Schwab's redirect. Running the existing script as a child process keeps that, and anything that goes wrong in it, out of the app server, and the button and the terminal use the same code.
+_No key in the logs:_ schwab-py prints the full login URL, which contains the API key. The script's output is discarded; it ends by writing one `LOBSTER-LOGIN: ok | timeout | error <Type>` line, the only thing the server reads.
+_Only from our page:_ `POST /api/schwab/login` requires a JSON request. Browsers won't let another website send one to this server without a CORS check, which it never approves, so a page elsewhere can't trigger a login.
+_Limits:_ one login at a time, stopped after 5.5 minutes. It assumes the browser and the server are the same machine; the move to a server (step 8) needs a callback URL on the server instead (roadmap).
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.
