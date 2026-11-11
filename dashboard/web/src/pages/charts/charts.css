@@ -128,6 +128,13 @@
   inset: 0;
 }
 
+/* Lightweight Charts gives its own canvases z-index 1 and 2 (and 49, 50).
+   z-index here makes the chart its own stacking context, so those numbers only
+   count inside it, and the drawing layer (1) and legend (2) stay on top. */
+.chart-canvas {
+  z-index: 0;
+}
+
 .legend {
   position: absolute;
   top: 10px;
