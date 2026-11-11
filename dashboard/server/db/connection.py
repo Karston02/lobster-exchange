@@ -15,7 +15,10 @@ def connect(path: Path) -> sqlite3.Connection:
     `transaction()`. That keeps "what's saved together" explicit.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, isolation_level=None)
+    # check_same_thread=False: FastAPI may open a request's connection on a worker
+    # thread and use it on the event loop's thread. That's safe as long as one
+    # connection is never used by two threads at once, and each request has its own.
+    conn = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
     conn.row_factory = sqlite3.Row  # rows act like dicts: row["name"]
     conn.execute("PRAGMA foreign_keys = ON")  # SQLite leaves these off by default
     conn.execute("PRAGMA journal_mode = WAL")  # readers don't wait for a writer

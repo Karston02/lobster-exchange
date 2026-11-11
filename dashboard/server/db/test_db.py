@@ -117,3 +117,16 @@ def test_transaction_saves_everything_or_nothing(conn):
             1 / 0
 
     assert [row[0] for row in conn.execute("SELECT x FROM t ORDER BY x")] == [1, 2]
+
+
+def test_a_connection_can_be_used_on_another_thread(tmp_path):
+    """FastAPI opens a request's connection on a worker thread and may use it on another
+    (this broke /api/history: "SQLite objects created in a thread can only be used in that same thread")."""
+    import threading
+
+    made = {}
+    worker = threading.Thread(target=lambda: made.setdefault("conn", connect(tmp_path / "t.db")))
+    worker.start()
+    worker.join()
+
+    assert made["conn"].execute("SELECT 1").fetchone()[0] == 1
