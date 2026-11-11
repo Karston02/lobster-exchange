@@ -145,13 +145,20 @@ export function createCandleChart(container: HTMLElement, onHover: (bar: Bar | n
   return {
     viewport() {
       const time = chart.timeScale();
+      // The library's own conversions only work on whole bars: logicalToCoordinate
+      // returns 0 for a fractional position, and coordinateToLogical rounds to a
+      // bar. Drawings sit between bars, so measure the (straight-line) mapping at
+      // bars 0 and 1 and do the arithmetic here instead.
+      const x0 = time.logicalToCoordinate(0 as Logical);
+      const x1 = time.logicalToCoordinate(1 as Logical);
+      const spacing = x0 === null || x1 === null ? 0 : x1 - x0; // pixels per bar
       return {
         width: time.width(),
         height: Math.max(0, container.clientHeight - time.height()),
         priceToY: (price) => candles.priceToCoordinate(price),
         yToPrice: (y) => candles.coordinateToPrice(y),
-        logicalToX: (logical) => time.logicalToCoordinate(logical as Logical),
-        xToLogical: (x) => time.coordinateToLogical(x),
+        logicalToX: (logical) => (spacing ? x0! + logical * spacing : null),
+        xToLogical: (x) => (spacing ? (x - x0!) / spacing : null),
       };
     },
     setInteractive(on) {
