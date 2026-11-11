@@ -248,6 +248,14 @@ _Sources:_ a `TickHub` counts which symbols pages are watching and tells the sou
 _Which bar a trade belongs to:_ the page doesn't redo the server's alignment rules (9:30 for stock hours, UTC for crypto, the trading day for D). A trade inside the last bar's period updates it; otherwise the new bar starts a whole number of periods after the last one, which keeps whatever grid the server chose. One known gap: across a daylight-saving change, a new daily stock bar can start an hour off until the page reloads.
 _Ticks keep every trade:_ unlike account updates (newest only), a tick queue keeps up to 1,000 ticks, since each trade can set the high or low.
 
+### 27. Drawings: an SVG layer anchored to time and price
+
+Drawings are saved per symbol in the database (`drawings` table, `dashboard/server/drawings/`) and shown on every timeframe of that symbol.
+_Anchored to (time, price), not pixels:_ a point is a moment and a price, so it stays put through zoom, scroll and timeframe changes. The chart lays bars out by index ("logical" position), with no space for nights or weekends, so `coords.ts` turns a time into a fractional bar index: between two bars it sits proportionally, past either end it continues at one bar per period. The reverse uses the same rule, so dragging round-trips exactly.
+_An SVG layer over the canvas, not chart primitives:_ Lightweight Charts can host custom drawings ("series primitives"), but an SVG overlay gives ordinary DOM pointer events, hit areas and CSS, which keeps the code short and readable. It covers only the plotting area (the time scale's width, the height minus the time axis), ignores the pointer except on drawings so the chart still pans, and takes every click while a drawing tool is on. While a drawing is dragged, the chart's own panning is switched off.
+_Following the chart:_ there's no single event for "the price axis was dragged", so the layer reads the viewport every animation frame and re-renders only when it changed. The mappings are straight lines, so two sample points per axis plus the size describe them completely.
+_Saving:_ the page makes each drawing's id (a UUID), shows changes at once and saves in the background (`PUT` creates or moves, `DELETE` removes). Pydantic refuses badly shaped drawings (a trend line with one point, an unknown kind).
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.

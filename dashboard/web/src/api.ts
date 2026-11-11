@@ -11,10 +11,20 @@ export class ApiError extends Error {
   }
 }
 
-export async function getJson<T>(url: string): Promise<T> {
+export const getJson = <T>(url: string) => request<T>(url);
+
+/** PUT, POST or DELETE, with an optional JSON body. */
+export const sendJson = <T>(method: "PUT" | "POST" | "DELETE", url: string, body?: unknown) =>
+  request<T>(url, {
+    method,
+    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(url);
+    response = await fetch(url, init);
   } catch {
     throw new ApiError(0, "The Lobster server isn't running. Start it with: python dashboard/server/app.py");
   }

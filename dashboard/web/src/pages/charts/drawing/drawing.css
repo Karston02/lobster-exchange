@@ -1,0 +1,47 @@
+/* The drawing layer sits over the plotting area. It ignores the pointer
+   (so the chart pans) except on drawings, or while a drawing tool is on. */
+.drawing-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.drawing-layer.capturing {
+  pointer-events: all;
+  cursor: crosshair;
+}
+
+.drawing .stroke {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.drawing.selected .stroke {
+  stroke-width: 2;
+}
+
+/* A wide, invisible copy of the line: easy to click without precise aim */
+.drawing .hit {
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+  cursor: move;
+}
+
+.drawing .handle {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  pointer-events: all;
+  cursor: grab;
+}
+
+.drawing .price-tag {
+  fill: var(--accent);
+  font-size: 11px;
+  pointer-events: none;
+}

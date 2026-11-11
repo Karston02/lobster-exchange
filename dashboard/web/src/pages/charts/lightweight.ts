@@ -9,6 +9,7 @@ import {
   CrosshairMode,
   HistogramSeries,
   TickMarkType,
+  type Logical,
   type MouseEventParams,
   type Time,
   type UTCTimestamp,
@@ -38,7 +39,21 @@ const volumePoint = (b: Bar) => ({
   color: b.close >= b.open ? THEME.upVolume : THEME.downVolume,
 });
 
+/** The plotting area (left of the price axis, above the time axis) and conversions
+ *  between chart positions and pixels inside it. Null means "off the chart". */
+export interface Viewport {
+  width: number;
+  height: number;
+  priceToY(price: number): number | null;
+  yToPrice(y: number): number | null;
+  logicalToX(logical: number): number | null;
+  xToLogical(x: number): number | null;
+}
+
 export interface CandleChart {
+  viewport(): Viewport;
+  /** Turns the chart's own dragging and zooming off while a drawing is being moved. */
+  setInteractive(on: boolean): void;
   setBars(bars: Bar[], intraday: boolean, decimals: number): void;
   /** Updates the last bar, or adds one after it (from a live trade). */
   updateBar(bar: Bar): void;
@@ -128,6 +143,20 @@ export function createCandleChart(container: HTMLElement, onHover: (bar: Bar | n
   chart.subscribeCrosshairMove(hover);
 
   return {
+    viewport() {
+      const time = chart.timeScale();
+      return {
+        width: time.width(),
+        height: Math.max(0, container.clientHeight - time.height()),
+        priceToY: (price) => candles.priceToCoordinate(price),
+        yToPrice: (y) => candles.coordinateToPrice(y),
+        logicalToX: (logical) => time.logicalToCoordinate(logical as Logical),
+        xToLogical: (x) => time.coordinateToLogical(x),
+      };
+    },
+    setInteractive(on) {
+      chart.applyOptions({ handleScroll: on, handleScale: on });
+    },
     setBars(bars, intraday, decimals) {
       byTime = new Map(bars.map((b) => [b.time, b]));
       const label = labels(intraday);

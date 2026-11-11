@@ -85,9 +85,40 @@
   margin-left: auto;
 }
 
+.chart-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.drawing-tools {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border-right: 1px solid var(--line);
+}
+
+.drawing-tools .icon-button[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--active);
+}
+
+.drawing-tools .icon-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: transparent;
+}
+
+.tools-gap {
+  height: 12px;
+}
+
 .chart-stage {
   position: relative;
   flex: 1;
+  min-width: 0;
   min-height: 0;
 }
 

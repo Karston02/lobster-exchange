@@ -11,6 +11,7 @@ LOBSTER_HOST:LOBSTER_PORT (http://127.0.0.1:8000 by default).
 
 Routes: /api/status, /api/account, /api/portfolio, /api/quotes,
 /api/orders (Schwab, see account/), /api/candles (charts, see market/),
+/api/drawings (chart drawings, see drawings/),
 /ws/live (live account updates, see live/), /ws/ticks (live trades for
 a chart), /api/recordings,
 /api/strategies and /ws/replay.
@@ -25,19 +26,21 @@ import asyncio
 import logging
 import re
 import sys
+from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
 # The settings package lives at the repo root
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from account import SchwabService, SchwabUnavailable  # noqa: E402
 from config import get_settings  # noqa: E402
-from db import open_database  # noqa: E402
+from db import connect, open_database  # noqa: E402
+from drawings import Drawing, delete_drawing, list_drawings, save_drawing  # noqa: E402
 from live import CoinbaseTrades, LiveFeed, TickHub  # noqa: E402
 from market import TIMEFRAMES, CoinbaseMarket, SourceUnavailable, UnknownSymbol, is_crypto  # noqa: E402
 from session import STRATEGIES, Session, list_recordings  # noqa: E402
@@ -143,6 +146,37 @@ async def candles(symbol: str, timeframe: str = "D") -> dict:
     except SourceUnavailable as error:
         raise HTTPException(503, str(error)) from None
     return asdict(series)
+
+
+def database() -> Iterator:
+    """One short-lived connection per request (SQLite's usual pattern for web servers)."""
+    conn = connect(get_settings().db_path)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@app.get("/api/drawings")
+def drawings(symbol: str, conn=Depends(database)) -> dict:
+    """The drawings on one symbol's chart (shared by every timeframe)."""
+    return {"drawings": [d.model_dump() for d in list_drawings(conn, symbol.strip().upper())]}
+
+
+@app.put("/api/drawings/{drawing_id}")
+def put_drawing(drawing_id: str, drawing: Drawing, conn=Depends(database)) -> dict:
+    """Creates or moves a drawing. FastAPI checks the body against `Drawing` (422 if it's wrong)."""
+    if drawing.id != drawing_id:
+        raise HTTPException(400, "the id in the path and the body differ")
+    save_drawing(conn, drawing)
+    return {"saved": drawing_id}
+
+
+@app.delete("/api/drawings/{drawing_id}")
+def remove_drawing(drawing_id: str, conn=Depends(database)) -> dict:
+    if not delete_drawing(conn, drawing_id):
+        raise HTTPException(404, "no such drawing")
+    return {"deleted": drawing_id}
 
 
 @app.get("/api/orders")
