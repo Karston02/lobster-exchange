@@ -257,6 +257,17 @@ _Our own bar-to-pixel math:_ the library's `logicalToCoordinate` returns 0 for f
 _Following the chart:_ there's no single event for "the price axis was dragged", so the layer reads the viewport every animation frame and re-renders only when it changed. The mappings are straight lines, so two sample points per axis plus the size describe them completely.
 _Saving:_ the page makes each drawing's id (a UUID), shows changes at once and saves in the background (`PUT` creates or moves, `DELETE` removes). Pydantic refuses badly shaped drawings (a trend line with one point, an unknown kind).
 
+### 28. More drawing tools, snap, lock, undo and redo
+
+Kinds: horizontal line (1 point), trend line, ray, rectangle and Fibonacci retracement (2 each), parallel channel (3: two for the line, one for the distance) and text (1). Measure is a tool too, but its box isn't saved.
+_One click loop for every tool:_ each tool declares how many clicks it takes (`CLICKS`). A draft collects points, with its last point following the pointer, and the drawing is saved when the last click lands. New tools only need a count and a shape component.
+_Geometry in pure functions:_ `geometry.ts` (where a ray leaves the chart, the channel's parallel line, Fibonacci prices, the measure readout) has no React or chart in it, so it's checked with plain Node. Shapes do their maths in pixels, which is safe because the price axis is linear.
+_Fibonacci convention:_ level 1 at the first click (start of the move), 0 at the second (its end), as TradingView does, so 0.618 reads as "61.8% of the move given back".
+_Snap:_ a strong magnet. A point jumps to the nearest bar and to whichever of its open, high, low or close is closest on screen.
+_Lock:_ stored per drawing (a new `locked` column). A locked drawing can still be selected, so it can be unlocked, but it can't be dragged or deleted.
+_Undo and redo:_ every save or delete records the drawing before and after. Undo writes back "before" (or deletes, if it didn't exist) and redo writes back "after", both through the same save path, so the server always matches. A drag is one change (saved on release). Text is saved once it has words, so a cancelled text box leaves no history. History is per symbol, for the current visit.
+_Migrating a live table:_ `0003` adds `text` and `locked` with defaults, so drawings saved before it still load; a test upgrades a 0002 database that already holds a drawing.
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.

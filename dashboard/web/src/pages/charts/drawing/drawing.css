@@ -40,8 +40,101 @@
   cursor: grab;
 }
 
-.drawing .price-tag {
+.drawing .tag {
   fill: var(--accent);
   font-size: 11px;
   pointer-events: none;
+}
+
+.drawing .stroke.faint {
+  stroke-opacity: 0.4;
+  stroke-dasharray: 4 4;
+}
+
+.drawing .stroke.dashed {
+  stroke-opacity: 0.6;
+  stroke-dasharray: 6 4;
+}
+
+/* Rectangles and channels: a light fill you can grab anywhere */
+.drawing .area {
+  fill: rgba(78, 161, 255, 0.08);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  pointer-events: all;
+  cursor: move;
+}
+
+.drawing polygon.area {
+  stroke: none;
+}
+
+.drawing .note {
+  fill: var(--text);
+  font-size: 13px;
+  pointer-events: all;
+  cursor: move;
+  user-select: none;
+}
+
+.drawing.selected .note {
+  fill: var(--link);
+}
+
+/* Locked drawings don't move: no move cursor, no handles to drag */
+.drawing.locked .hit,
+.drawing.locked .area,
+.drawing.locked .note {
+  cursor: default;
+}
+
+.drawing.locked .handle {
+  display: none;
+}
+
+/* The measure tool's box */
+.measure rect {
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.measure.gain rect {
+  fill: rgba(79, 209, 161, 0.12);
+  stroke: var(--gain);
+}
+
+.measure.loss rect {
+  fill: rgba(255, 143, 107, 0.12);
+  stroke: var(--loss);
+}
+
+.measure text {
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.measure.gain text {
+  fill: var(--gain);
+}
+
+.measure.loss text {
+  fill: var(--loss);
+}
+
+/* Writing a text drawing */
+.text-editor {
+  position: absolute;
+  z-index: 3;
+  min-width: 120px;
+  padding: 2px 6px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.text-editor:focus {
+  outline: none;
 }

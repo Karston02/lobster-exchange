@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent, type RefObject } from "react";
 import { TIMEFRAMES, type Timeframe } from "./bars";
+import { Icons } from "./drawing/icons";
 import { FullScreenButton } from "./FullScreenButton";
 
 interface Props {
@@ -8,6 +9,10 @@ interface Props {
   timeframe: Timeframe;
   onSymbol: (symbol: string) => void;
   onTimeframe: (timeframe: Timeframe) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 const TIMEFRAME_NAMES: Record<Timeframe, string> = {
@@ -20,8 +25,9 @@ const TIMEFRAME_NAMES: Record<Timeframe, string> = {
   W: "1 week",
 };
 
-/** The top toolbar: symbol box, timeframe buttons, and full screen on the right. */
-export function Toolbar({ fullScreenTarget, symbol, timeframe, onSymbol, onTimeframe }: Props) {
+/** The top toolbar: symbol box, timeframe buttons, and on the right undo, redo and full screen. */
+export function Toolbar(props: Props) {
+  const { fullScreenTarget, symbol, timeframe, onSymbol, onTimeframe } = props;
   const [typed, setTyped] = useState(symbol);
   useEffect(() => setTyped(symbol), [symbol]);
 
@@ -62,7 +68,15 @@ export function Toolbar({ fullScreenTarget, symbol, timeframe, onSymbol, onTimef
           </button>
         ))}
       </div>
-      <FullScreenButton target={fullScreenTarget} />
+      <div className="toolbar-end">
+        <button type="button" className="icon-button" aria-label="Undo (⌘Z)" title="Undo (⌘Z)" disabled={!props.canUndo} onClick={props.onUndo}>
+          {Icons.undo}
+        </button>
+        <button type="button" className="icon-button" aria-label="Redo (⇧⌘Z)" title="Redo (⇧⌘Z)" disabled={!props.canRedo} onClick={props.onRedo}>
+          {Icons.redo}
+        </button>
+        <FullScreenButton target={fullScreenTarget} />
+      </div>
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { useTicks } from "./useTicks";
 export interface DrawingControls {
   drawings: Drawing[];
   tool: Tool;
+  snap: boolean;
   selectedId: string | null;
   onSave: (drawing: Drawing) => void;
   onSelect: (id: string | null) => void;
@@ -32,7 +33,7 @@ export function CandleChart({ symbol, timeframe, bars, intraday, decimals, drawi
   const box = useRef<HTMLDivElement>(null);
   const [chart, setChart] = useState<Chart | null>(null);
   const last = useRef<Bar | null>(null);
-  const [times, setTimes] = useState<number[]>([]);
+  const [series, setSeries] = useState<Bar[]>([]); // the bars on screen, live last bar included
   const [latest, setLatest] = useState<Bar | null>(null);
   const [hovered, setHovered] = useState<Bar | null>(null);
 
@@ -48,7 +49,7 @@ export function CandleChart({ symbol, timeframe, bars, intraday, decimals, drawi
   useEffect(() => {
     chart?.setBars(bars, intraday, decimals);
     last.current = bars[bars.length - 1] ?? null;
-    setTimes(bars.map((b) => b.time));
+    setSeries(bars);
     setLatest(last.current);
     setHovered(null);
   }, [chart, bars, intraday, decimals]);
@@ -58,7 +59,8 @@ export function CandleChart({ symbol, timeframe, bars, intraday, decimals, drawi
     const next = applyTick(last.current, tick, PERIOD_S[timeframe]);
     if (!next) return;
     chart?.updateBar(next);
-    if (next.time !== last.current.time) setTimes((old) => [...old, next.time]);
+    const isNew = next.time !== last.current.time;
+    setSeries((old) => (isNew ? [...old, next] : [...old.slice(0, -1), next]));
     last.current = next;
     setLatest(next);
   });
@@ -74,7 +76,7 @@ export function CandleChart({ symbol, timeframe, bars, intraday, decimals, drawi
       <div ref={box} className="chart-canvas" />
       <DrawingLayer
         chart={chart}
-        times={times}
+        bars={series}
         periodS={PERIOD_S[timeframe]}
         decimals={decimals}
         symbol={symbol}

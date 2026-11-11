@@ -6,14 +6,28 @@ export interface Anchor {
   price: number; // dollars
 }
 
-export type DrawingKind = "hline" | "trend";
+export type DrawingKind = "hline" | "trend" | "ray" | "rect" | "fib" | "channel" | "text";
 
 export interface Drawing {
   id: string;
   symbol: string;
   kind: DrawingKind;
-  points: Anchor[]; // hline: 1, trend: 2
+  points: Anchor[];
+  text: string; // text drawings only
+  locked: boolean; // can't be moved or deleted until unlocked
 }
 
-/** What a click on the chart does: select and drag, or draw a new shape. */
-export type Tool = "select" | DrawingKind;
+/** What a click on the chart does. Measure is a drawing tool whose result isn't saved. */
+export type Tool = "select" | DrawingKind | "measure";
+
+/** How many clicks each tool takes. */
+export const CLICKS: Record<Exclude<Tool, "select">, number> = {
+  hline: 1,
+  text: 1,
+  trend: 2,
+  ray: 2,
+  rect: 2,
+  fib: 2,
+  measure: 2,
+  channel: 3, // two for the line, one for the parallel line's distance
+};

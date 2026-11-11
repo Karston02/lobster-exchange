@@ -1,77 +1,82 @@
 import type { ReactNode } from "react";
+import { Icons } from "./icons";
 import type { Tool } from "./types";
 
 interface Props {
   tool: Tool;
   onTool: (tool: Tool) => void;
-  canDelete: boolean;
+  snap: boolean;
+  onSnap: (on: boolean) => void;
+  selectedLocked: boolean | null; // null: nothing selected
+  onLock: () => void;
   onDelete: () => void;
 }
 
-const ICON = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8 };
-
-const TOOLS: { tool: Tool; label: string; icon: ReactNode }[] = [
-  {
-    tool: "select",
-    label: "Select and move (Esc)",
-    icon: (
-      <svg {...ICON} aria-hidden="true">
-        <path d="M5 3l14 8-6 2-2 6z" />
-      </svg>
-    ),
-  },
-  {
-    tool: "trend",
-    label: "Trend line",
-    icon: (
-      <svg {...ICON} aria-hidden="true">
-        <path d="M4 19L20 5" />
-        <circle cx="4" cy="19" r="1.6" />
-        <circle cx="20" cy="5" r="1.6" />
-      </svg>
-    ),
-  },
-  {
-    tool: "hline",
-    label: "Horizontal line",
-    icon: (
-      <svg {...ICON} aria-hidden="true">
-        <path d="M3 12h18" />
-      </svg>
-    ),
-  },
+const TOOLS: { tool: Tool; label: string }[] = [
+  { tool: "select", label: "Select and move (Esc)" },
+  { tool: "trend", label: "Trend line" },
+  { tool: "ray", label: "Ray" },
+  { tool: "hline", label: "Horizontal line" },
+  { tool: "channel", label: "Parallel channel (3 clicks)" },
+  { tool: "fib", label: "Fibonacci retracement (start of the move, then its end)" },
+  { tool: "rect", label: "Rectangle" },
+  { tool: "text", label: "Text" },
+  { tool: "measure", label: "Measure (not saved)" },
 ];
 
-/** The vertical toolbar on the chart's left. */
-export function DrawingTools({ tool, onTool, canDelete, onDelete }: Props) {
+/** The vertical toolbar on the chart's left: drawing tools, then snap, lock and delete. */
+export function DrawingTools({ tool, onTool, snap, onSnap, selectedLocked, onLock, onDelete }: Props) {
+  const nothing = selectedLocked === null;
   return (
     <div className="drawing-tools" role="toolbar" aria-label="Drawing tools" aria-orientation="vertical">
       {TOOLS.map((t) => (
-        <button
-          key={t.tool}
-          type="button"
-          className="icon-button"
-          aria-pressed={tool === t.tool}
-          aria-label={t.label}
-          title={t.label}
-          onClick={() => onTool(t.tool)}
-        >
-          {t.icon}
-        </button>
+        <ToolButton key={t.tool} label={t.label} pressed={tool === t.tool} onClick={() => onTool(t.tool)}>
+          {Icons[t.tool]}
+        </ToolButton>
       ))}
       <span className="tools-gap" />
-      <button
-        type="button"
-        className="icon-button"
-        aria-label="Delete the selected drawing (Delete)"
-        title="Delete the selected drawing (Delete)"
-        disabled={!canDelete}
+      <ToolButton label="Snap to candle open, high, low or close" pressed={snap} onClick={() => onSnap(!snap)}>
+        {Icons.snap}
+      </ToolButton>
+      <ToolButton
+        label={selectedLocked ? "Unlock the selected drawing" : "Lock the selected drawing"}
+        pressed={selectedLocked === true}
+        disabled={nothing}
+        onClick={onLock}
+      >
+        {Icons.lock}
+      </ToolButton>
+      <ToolButton
+        label="Delete the selected drawing (Delete)"
+        disabled={nothing || selectedLocked === true}
         onClick={onDelete}
       >
-        <svg {...ICON} aria-hidden="true">
-          <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
-        </svg>
-      </button>
+        {Icons.trash}
+      </ToolButton>
     </div>
+  );
+}
+
+interface ButtonProps {
+  label: string;
+  pressed?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}
+
+function ToolButton({ label, pressed, disabled, onClick, children }: ButtonProps) {
+  return (
+    <button
+      type="button"
+      className="icon-button"
+      aria-pressed={pressed}
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </button>
   );
 }

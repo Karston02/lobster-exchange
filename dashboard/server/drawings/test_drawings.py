@@ -50,8 +50,50 @@ def test_delete(conn):
         {"kind": "trend", "points": [{"time": 1, "price": 1.0}]},  # a trend line needs two points
         {"kind": "hline", "points": []},
         {"kind": "circle", "points": [{"time": 1, "price": 1.0}]},
+        {"kind": "channel", "points": [{"time": 1, "price": 1.0}, {"time": 2, "price": 2.0}]},  # needs three
+        {"kind": "text", "points": [{"time": 1, "price": 1.0}], "text": "x" * 201},
     ],
 )
 def test_badly_shaped_drawings_are_refused(bad):
     with pytest.raises(ValidationError):
         Drawing(id="x", symbol="AAPL", **bad)
+
+
+def test_text_and_lock_are_saved_and_updated(conn):
+    note = Drawing(id="n", symbol="AAPL", kind="text", points=[{"time": 1, "price": 190.0}], text="earnings")
+    save_drawing(conn, note)
+    save_drawing(conn, note.model_copy(update={"text": "earnings beat", "locked": True}))
+
+    (saved,) = list_drawings(conn, "AAPL")
+    assert saved.text == "earnings beat" and saved.locked is True
+
+
+def test_every_kind_round_trips(conn):
+    from drawings.store import POINTS
+
+    for i, (kind, count) in enumerate(POINTS.items()):
+        points = [{"time": 1000 + j, "price": 100.0 + j} for j in range(count)]
+        save_drawing(conn, Drawing(id=f"d{i}", symbol="SPY", kind=kind, points=points))
+
+    assert [d.kind for d in list_drawings(conn, "SPY")] == list(POINTS)
+
+
+def test_drawings_saved_before_the_new_columns_still_load(tmp_path):
+    """A database at migration 0002, with a drawing in it, then upgraded to 0003."""
+    from db import connect, migrate
+    from db.migrate import MIGRATIONS
+
+    old = tmp_path / "old"
+    old.mkdir()
+    for name in ("0001_app_settings.sql", "0002_drawings.sql"):
+        (old / name).write_text((MIGRATIONS / name).read_text())
+    conn = connect(tmp_path / "lobster.db")
+    migrate(conn, old)
+    conn.execute(
+        "INSERT INTO drawings (id, symbol, kind, points, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        ("old", "AAPL", "hline", '[{"time": 1, "price": 5.0}]', "2026-11-10", "2026-11-10"),
+    )
+
+    assert migrate(conn) == ["0003_drawing_text_and_lock.sql"]
+    (drawing,) = list_drawings(conn, "AAPL")
+    assert drawing.text == "" and drawing.locked is False

@@ -1,51 +1,46 @@
 import type { PointerEvent } from "react";
+import type { Pixel } from "./geometry";
+import { Channel, Rect } from "./shapes/Areas";
+import { Fib } from "./shapes/Fib";
+import { HLine, Ray, Trend } from "./shapes/Lines";
+import { TextNote } from "./shapes/TextNote";
 import type { Drawing } from "./types";
-
-export interface Pixel {
-  x: number;
-  y: number;
-}
 
 /** Which part of a drawing the pointer grabbed: one of its points, or the whole thing. */
 export type Part = number | "all";
 
-interface Props {
+/** What every shape gets: where its points are on screen, and how to report a grab. */
+export interface ShapeProps {
   drawing: Drawing;
-  pixels: (Pixel | null)[]; // where each point is on screen
+  pixels: Pixel[]; // one per point, already on screen
   width: number;
-  selected: boolean;
+  height: number;
   decimals: number;
-  onGrab: (event: PointerEvent, drawing: Drawing, part: Part) => void;
+  grab: (part: Part) => (event: PointerEvent) => void;
 }
 
-/** One drawing in SVG: the visible line, a wider invisible line that's easy to
- *  click, and drag handles when it's selected. */
-export function Shape({ drawing, pixels, width, selected, decimals, onGrab }: Props) {
-  const grab = (part: Part) => (event: PointerEvent) => onGrab(event, drawing, part);
-  const handles = selected ? pixels : [];
-  const cls = `drawing${selected ? " selected" : ""}`;
+interface Props extends Omit<ShapeProps, "pixels"> {
+  pixels: (Pixel | null)[];
+  selected: boolean;
+  onEdit: (drawing: Drawing) => void;
+}
 
-  if (drawing.kind === "hline") {
-    const y = pixels[0]?.y;
-    if (y == null) return null;
-    return (
-      <g className={cls}>
-        <line className="hit" x1={0} y1={y} x2={width} y2={y} onPointerDown={grab(0)} />
-        <line className="stroke" x1={0} y1={y} x2={width} y2={y} />
-        <text className="price-tag num" x={width - 6} y={y - 6} textAnchor="end">
-          {drawing.points[0].price.toFixed(decimals)}
-        </text>
-      </g>
-    );
-  }
+const SHAPES = { hline: HLine, trend: Trend, ray: Ray, rect: Rect, fib: Fib, channel: Channel, text: TextNote };
 
-  const [a, b] = pixels;
-  if (!a || !b) return null;
+/** One drawing: the right shape for its kind, plus drag handles when it's selected. */
+export function Shape({ drawing, pixels, selected, onEdit, ...rest }: Props) {
+  if (pixels.some((p) => p === null)) return null; // a point is off the chart (no bars there yet)
+  const on = pixels as Pixel[];
+  const Kind = SHAPES[drawing.kind];
+  const cls = `drawing${selected ? " selected" : ""}${drawing.locked ? " locked" : ""}`;
+  // An hline's single handle sits mid-screen; text has no handles (drag the words)
+  const handles = !selected || drawing.kind === "text" ? [] : drawing.kind === "hline" ? [{ x: rest.width / 2, y: on[0].y }] : on;
   return (
-    <g className={cls}>
-      <line className="hit" x1={a.x} y1={a.y} x2={b.x} y2={b.y} onPointerDown={grab("all")} />
-      <line className="stroke" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
-      {handles.map((p, i) => p && <circle key={i} className="handle" cx={p.x} cy={p.y} r={5} onPointerDown={grab(i)} />)}
+    <g className={cls} onDoubleClick={() => drawing.kind === "text" && onEdit(drawing)}>
+      <Kind drawing={drawing} pixels={on} {...rest} />
+      {handles.map((p, i) => (
+        <circle key={i} className="handle" cx={p.x} cy={p.y} r={5} onPointerDown={rest.grab(i)} />
+      ))}
     </g>
   );
 }

@@ -25,25 +25,41 @@ export function Charts() {
   const drawings = useDrawings(symbol);
   const [tool, setTool] = useState<Tool>("select");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [snap, setSnap] = useState(false);
+  const selected = drawings.list.find((d) => d.id === selectedId) ?? null;
   const page = useRef<HTMLElement>(null);
 
   useEffect(() => setSelectedId(null), [symbol]);
 
+  const deleteSelected = () => {
+    if (!selected || selected.locked) return; // locked drawings stay until unlocked
+    drawings.remove(selected.id);
+    setSelectedId(null);
+  };
+
   // Esc: back to the select tool, nothing selected. Delete or Backspace: delete the selection.
+  // Cmd/Ctrl+Z: undo. Cmd/Ctrl+Shift+Z or Ctrl+Y: redo.
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if ((event.target as Element).closest("input, textarea")) return; // typing a symbol
+      if ((event.target as Element).closest("input, textarea")) return; // typing a symbol or text
+      const mod = event.metaKey || event.ctrlKey;
       if (event.key === "Escape") {
         setTool("select");
         setSelectedId(null);
-      } else if ((event.key === "Delete" || event.key === "Backspace") && selectedId) {
-        drawings.remove(selectedId);
-        setSelectedId(null);
+      } else if (event.key === "Delete" || event.key === "Backspace") {
+        deleteSelected();
+      } else if (mod && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        if (event.shiftKey) drawings.redo();
+        else drawings.undo();
+      } else if (mod && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        drawings.redo();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, drawings]);
+  });
 
   const go = (s: string, tf: Timeframe) => navigate(`/charts?symbol=${encodeURIComponent(s)}&tf=${tf}`);
 
@@ -55,16 +71,20 @@ export function Charts() {
         timeframe={timeframe}
         onSymbol={(s) => go(s, timeframe)}
         onTimeframe={(tf) => go(symbol, tf)}
+        onUndo={drawings.undo}
+        onRedo={drawings.redo}
+        canUndo={drawings.canUndo}
+        canRedo={drawings.canRedo}
       />
       <div className="chart-body">
         <DrawingTools
           tool={tool}
           onTool={setTool}
-          canDelete={selectedId !== null}
-          onDelete={() => {
-            if (selectedId) drawings.remove(selectedId);
-            setSelectedId(null);
-          }}
+          snap={snap}
+          onSnap={setSnap}
+          selectedLocked={selected ? selected.locked : null}
+          onLock={() => selected && drawings.save({ ...selected, locked: !selected.locked })}
+          onDelete={deleteSelected}
         />
         <div className="chart-stage">
           <CandleChart
@@ -76,6 +96,7 @@ export function Charts() {
             drawing={{
               drawings: drawings.list,
               tool,
+              snap,
               selectedId,
               onSave: drawings.save,
               onSelect: setSelectedId,

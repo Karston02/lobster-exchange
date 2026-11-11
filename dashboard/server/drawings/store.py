@@ -12,7 +12,17 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 # How many points each kind of drawing has
-POINTS = {"hline": 1, "trend": 2}
+POINTS = {
+    "hline": 1,  # horizontal line: a price
+    "trend": 2,  # segment between two points
+    "ray": 2,  # from the first point through the second, on to the edge
+    "rect": 2,  # opposite corners
+    "fib": 2,  # Fibonacci retracement: start (level 1) and end (level 0) of a move
+    "channel": 3,  # a line through the first two, and a parallel one through the third
+    "text": 1,  # where the words sit
+}
+
+Kind = Literal["hline", "trend", "ray", "rect", "fib", "channel", "text"]
 
 
 class Point(BaseModel):
@@ -23,8 +33,10 @@ class Point(BaseModel):
 class Drawing(BaseModel):
     id: str = Field(min_length=1, max_length=64)
     symbol: str = Field(min_length=1, max_length=15)
-    kind: Literal["hline", "trend"]
+    kind: Kind
     points: list[Point]
+    text: str = Field(default="", max_length=200)  # only text drawings use it
+    locked: bool = False  # can't be moved or deleted until unlocked
 
     @model_validator(mode="after")
     def _right_number_of_points(self) -> "Drawing":
@@ -35,20 +47,33 @@ class Drawing(BaseModel):
 
 def list_drawings(conn: sqlite3.Connection, symbol: str) -> list[Drawing]:
     rows = conn.execute(
-        "SELECT id, symbol, kind, points FROM drawings WHERE symbol = ? ORDER BY created_at", (symbol,)
+        "SELECT id, symbol, kind, points, text, locked FROM drawings WHERE symbol = ? ORDER BY created_at, rowid",
+        (symbol,),
     ).fetchall()
-    return [Drawing(id=r["id"], symbol=r["symbol"], kind=r["kind"], points=json.loads(r["points"])) for r in rows]
+    return [
+        Drawing(
+            id=r["id"],
+            symbol=r["symbol"],
+            kind=r["kind"],
+            points=json.loads(r["points"]),
+            text=r["text"],
+            locked=bool(r["locked"]),
+        )
+        for r in rows
+    ]
 
 
 def save_drawing(conn: sqlite3.Connection, drawing: Drawing) -> None:
-    """Creates the drawing, or replaces its points if it exists (an "upsert")."""
+    """Creates the drawing, or replaces its points, text and lock if it exists (an "upsert")."""
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     points = json.dumps([p.model_dump() for p in drawing.points])
     conn.execute(
-        """INSERT INTO drawings (id, symbol, kind, points, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT (id) DO UPDATE SET points = excluded.points, updated_at = excluded.updated_at""",
-        (drawing.id, drawing.symbol, drawing.kind, points, now, now),
+        """INSERT INTO drawings (id, symbol, kind, points, text, locked, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO UPDATE SET
+               points = excluded.points, text = excluded.text,
+               locked = excluded.locked, updated_at = excluded.updated_at""",
+        (drawing.id, drawing.symbol, drawing.kind, points, drawing.text, int(drawing.locked), now, now),
     )
 
 

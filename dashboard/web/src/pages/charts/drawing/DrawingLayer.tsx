@@ -1,29 +1,43 @@
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import type { Bar } from "../bars";
 import type { CandleChart, Viewport } from "../lightweight";
 import { logicalToTime, timeToLogical } from "./coords";
-import { Shape, type Part, type Pixel } from "./Shape";
-import type { Anchor, Drawing, Tool } from "./types";
+import { measure, type Pixel } from "./geometry";
+import { MeasureBox } from "./MeasureBox";
+import { Shape, type Part } from "./Shape";
+import { snapToBar } from "./snap";
+import { TextEditor } from "./TextEditor";
+import { CLICKS, type Anchor, type Drawing, type DrawingKind, type Tool } from "./types";
 import "./drawing.css";
 
 interface Props {
   chart: CandleChart | null;
-  times: number[]; // the bars' start times, ascending
+  bars: Bar[]; // ascending, including the live last bar
   periodS: number;
   decimals: number;
   symbol: string;
   drawings: Drawing[];
   tool: Tool;
+  snap: boolean;
   selectedId: string | null;
   onSave: (drawing: Drawing) => void;
   onSelect: (id: string | null) => void;
   onToolDone: () => void;
 }
 
+/** A point under the pointer: chart position plus its bar index. */
+type At = Anchor & { logical: number };
+
 interface Drag {
   original: Drawing;
   part: Part;
-  start: Anchor & { logical: number }; // where the pointer went down
-  moved: boolean;
+  start: At;
+}
+
+/** Something being drawn: its points so far, the last one following the pointer. */
+interface Draft {
+  kind: DrawingKind | "measure";
+  points: At[];
 }
 
 /** An SVG layer over the chart's plotting area that draws, selects and drags drawings.
@@ -31,15 +45,29 @@ interface Drag {
  *  It's transparent to the pointer except on drawings, so the chart still pans
  *  and zooms underneath; while a drawing tool is active it takes every click. */
 export function DrawingLayer(props: Props) {
-  const { chart, times, periodS, drawings, tool, selectedId } = props;
+  const { chart, bars, periodS, tool, selectedId } = props;
+  const times = useMemo(() => bars.map((b) => b.time), [bars]);
   const svg = useRef<SVGSVGElement>(null);
-  const [draft, setDraft] = useState<Drawing | null>(null); // a trend line being drawn
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [measured, setMeasured] = useState<At[] | null>(null); // the last measurement, until the next click
   const [moving, setMoving] = useState<Drawing | null>(null); // a drawing being dragged
+  const [editing, setEditing] = useState<Drawing | null>(null); // a text drawing being written
   const drag = useRef<Drag | null>(null);
   const view = useViewport(chart);
 
-  // Switching tools (Esc does that too) or symbols abandons a half-drawn line
-  useEffect(() => setDraft(null), [tool, props.symbol]);
+  // Switching tools (Esc does that too) or symbols abandons anything half-drawn
+  useEffect(() => {
+    setDraft(null);
+    setEditing(null);
+  }, [tool, props.symbol]);
+
+  // A measurement stays up until the next click anywhere
+  useEffect(() => {
+    if (!measured) return;
+    const clear = () => setMeasured(null);
+    window.addEventListener("pointerdown", clear, { once: true });
+    return () => window.removeEventListener("pointerdown", clear);
+  }, [measured]);
 
   if (!view) return null;
 
@@ -49,85 +77,104 @@ export function DrawingLayer(props: Props) {
     return x == null || y == null ? null : { x, y };
   };
 
-  const pointerAt = (event: PointerEvent): (Anchor & { logical: number }) | null => {
+  const pointerAt = (event: PointerEvent): At | null => {
     const box = svg.current!.getBoundingClientRect();
     const current = chart!.viewport(); // fresh, in case the chart moved this frame
-    const logical = current.xToLogical(event.clientX - box.left);
-    const price = current.yToPrice(event.clientY - box.top);
+    const x = event.clientX - box.left;
+    const y = event.clientY - box.top;
+    let logical = current.xToLogical(x);
+    let price = current.yToPrice(y);
     if (logical == null || price == null) return null;
+    if (props.snap) ({ logical, price } = snapToBar(logical, price, y, bars, current));
     return { logical, price, time: Math.round(logicalToTime(times, periodS, logical)) };
   };
 
   // --- drawing something new ---
 
   function onPointerDown(event: PointerEvent) {
-    if (tool === "select") return;
+    if (tool === "select" || editing) return;
     const at = pointerAt(event);
     if (!at) return;
-    const point = { time: at.time, price: at.price };
-    if (tool === "hline") {
-      finish({ id: crypto.randomUUID(), symbol: props.symbol, kind: "hline", points: [point] });
-    } else if (!draft) {
-      setDraft({ id: crypto.randomUUID(), symbol: props.symbol, kind: "trend", points: [point, point] });
-    } else {
-      finish({ ...draft, points: [draft.points[0], point] });
+    const points = draft ? [...draft.points.slice(0, -1), at] : [at]; // fix the point that was following
+    if (points.length < CLICKS[tool]) {
+      setDraft({ kind: tool, points: [...points, at] }); // and start a new following point
+      return;
+    }
+    setDraft(null);
+    props.onToolDone();
+    if (tool === "measure") {
+      setMeasured(points);
+      return;
+    }
+    const drawing = newDrawing(tool, points);
+    if (tool === "text") setEditing(drawing); // saved once it has words
+    else {
+      props.onSave(drawing);
+      props.onSelect(drawing.id);
     }
   }
 
-  function finish(drawing: Drawing) {
-    setDraft(null);
-    props.onSave(drawing);
+  function newDrawing(kind: DrawingKind, points: At[]): Drawing {
+    return {
+      id: crypto.randomUUID(),
+      symbol: props.symbol,
+      kind,
+      points: points.map((p) => ({ time: p.time, price: p.price })),
+      text: "",
+      locked: false,
+    };
+  }
+
+  function onTextDone(text: string | null) {
+    const drawing = editing!;
+    setEditing(null);
+    if (text === null || !text.trim()) return; // cancelled, or nothing written: nothing to keep
+    if (text !== drawing.text) props.onSave({ ...drawing, text: text.trim() });
     props.onSelect(drawing.id);
-    props.onToolDone();
   }
 
   // --- grabbing and dragging ---
 
-  function onGrab(event: PointerEvent, drawing: Drawing, part: Part) {
+  const grab = (drawing: Drawing) => (part: Part) => (event: PointerEvent) => {
     if (tool !== "select") return;
     event.stopPropagation();
     props.onSelect(drawing.id);
+    if (drawing.locked) return; // selectable (to unlock), but it doesn't move
     const at = pointerAt(event);
     if (!at) return;
-    drag.current = { original: drawing, part, start: at, moved: false };
+    drag.current = { original: drawing, part, start: at };
     svg.current!.setPointerCapture(event.pointerId);
     chart!.setInteractive(false); // the chart mustn't pan while a drawing moves
-  }
+  };
 
   function onPointerMove(event: PointerEvent) {
+    if (!draft && !drag.current) return;
     const at = pointerAt(event);
     if (!at) return;
-    if (draft) {
-      setDraft({ ...draft, points: [draft.points[0], { time: at.time, price: at.price }] });
-      return;
-    }
-    const d = drag.current;
-    if (!d) return;
-    d.moved = true;
-    setMoving(dragged(d, at));
+    if (draft) setDraft({ ...draft, points: [...draft.points.slice(0, -1), at] });
+    else setMoving(dragged(drag.current!, at));
   }
 
   function onPointerUp(event: PointerEvent) {
-    const d = drag.current;
-    if (!d) return;
+    if (!drag.current) return;
     drag.current = null;
     svg.current!.releasePointerCapture(event.pointerId);
     chart!.setInteractive(true);
-    if (d.moved && moving) props.onSave(moving);
+    if (moving) props.onSave(moving);
     setMoving(null);
   }
 
   /** Where the drawing is after dragging from `d.start` to `at`. */
-  function dragged(d: Drag, at: Anchor & { logical: number }): Drawing {
+  function dragged(d: Drag, at: At): Drawing {
     const points = d.original.points;
     if (d.part === "all") {
       // Move every point by the same number of bars and dollars
-      const bars = at.logical - d.start.logical;
+      const shift = at.logical - d.start.logical;
       const dollars = at.price - d.start.price;
       return {
         ...d.original,
         points: points.map((p) => ({
-          time: Math.round(logicalToTime(times, periodS, timeToLogical(times, periodS, p.time) + bars)),
+          time: Math.round(logicalToTime(times, periodS, timeToLogical(times, periodS, p.time) + shift)),
           price: p.price + dollars,
         })),
       };
@@ -137,32 +184,54 @@ export function DrawingLayer(props: Props) {
     return { ...d.original, points: points.map((p, i) => (i === index ? moved : p)) };
   }
 
-  const shown = [...drawings.map((d) => (moving && d.id === moving.id ? moving : d)), ...(draft ? [draft] : [])];
+  // --- what's on screen ---
+
+  const draftDrawing = draft && draft.kind !== "measure" ? { ...newDrawing(draft.kind, draft.points), id: "draft" } : null;
+  const shown = [
+    ...props.drawings.filter((d) => d.id !== editing?.id).map((d) => (moving && d.id === moving.id ? moving : d)),
+    ...(draftDrawing ? [draftDrawing] : []),
+  ];
+  const measuring = draft?.kind === "measure" ? draft.points : measured;
   const capturing = tool !== "select" || drag.current !== null;
+  const editAt = editing ? toPixel(editing.points[0]) : null;
 
   return (
-    <svg
-      ref={svg}
-      className={`drawing-layer${capturing ? " capturing" : ""}`}
-      width={view.width}
-      height={view.height}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-    >
-      {shown.map((d) => (
-        <Shape
-          key={d.id}
-          drawing={d}
-          pixels={d.points.map(toPixel)}
-          width={view.width}
-          selected={d.id === selectedId || d === draft}
-          decimals={props.decimals}
-          onGrab={onGrab}
-        />
-      ))}
-    </svg>
+    <>
+      <svg
+        ref={svg}
+        className={`drawing-layer${capturing ? " capturing" : ""}`}
+        width={view.width}
+        height={view.height}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+      >
+        {shown.map((d) => (
+          <Shape
+            key={d.id}
+            drawing={d}
+            pixels={d.points.map(toPixel)}
+            width={view.width}
+            height={view.height}
+            decimals={props.decimals}
+            selected={d.id === selectedId || d === draftDrawing}
+            grab={grab(d)}
+            onEdit={setEditing}
+          />
+        ))}
+        {measuring && measuring.length === 2 && (
+          <MeasurePair points={measuring} toPixel={toPixel} decimals={props.decimals} />
+        )}
+      </svg>
+      {editing && editAt && <TextEditor key={editing.id} at={editAt} initial={editing.text} onDone={onTextDone} />}
+    </>
   );
+}
+
+function MeasurePair({ points, toPixel, decimals }: { points: At[]; toPixel: (a: Anchor) => Pixel | null; decimals: number }) {
+  const [a, b] = points.map(toPixel);
+  if (!a || !b) return null;
+  return <MeasureBox a={a} b={b} result={measure(points[0], points[1])} decimals={decimals} />;
 }
 
 /** The chart's viewport, re-read every animation frame. React only re-renders
