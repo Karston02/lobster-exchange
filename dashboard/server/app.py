@@ -11,7 +11,8 @@ LOBSTER_HOST:LOBSTER_PORT (http://127.0.0.1:8000 by default).
 
 Routes: /api/status, /api/account, /api/portfolio, /api/quotes,
 /api/orders (Schwab, see account/), /api/candles (charts, see market/),
-/api/drawings (chart drawings, see drawings/),
+/api/drawings (chart drawings, see drawings/), /api/history (recorded
+value over time, see history/),
 /ws/live (live account updates, see live/), /ws/ticks (live trades for
 a chart), /api/recordings,
 /api/strategies and /ws/replay.
@@ -29,10 +30,11 @@ import sys
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 
 # The settings package lives at the repo root
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -41,6 +43,7 @@ from account import SchwabService, SchwabUnavailable  # noqa: E402
 from config import get_settings  # noqa: E402
 from db import connect, open_database  # noqa: E402
 from drawings import Drawing, delete_drawing, list_drawings, save_drawing  # noqa: E402
+from history import RANGES, HistoryRecorder, build_history  # noqa: E402
 from live import CoinbaseTrades, LiveFeed, TickHub  # noqa: E402
 from market import TIMEFRAMES, CoinbaseMarket, SourceUnavailable, UnknownSymbol, is_crypto  # noqa: E402
 from session import STRATEGIES, Session, list_recordings  # noqa: E402
@@ -65,7 +68,10 @@ async def lifespan(_: FastAPI):
 
     app.state.ticks.on_change(follow)
     app.state.live.start()  # runs on the server whether or not a page is open
+    app.state.recorder = HistoryRecorder(app.state.live, settings.db_path)
+    app.state.recorder.start()  # the portfolio's value, every minute
     yield
+    await app.state.recorder.stop()
     await app.state.coinbase_trades.stop()
     await app.state.live.stop()
     await app.state.coinbase.close()
@@ -177,6 +183,35 @@ def remove_drawing(drawing_id: str, conn=Depends(database)) -> dict:
     if not delete_drawing(conn, drawing_id):
         raise HTTPException(404, "no such drawing")
     return {"deleted": drawing_id}
+
+
+ACCOUNT_KEY = re.compile(r"^(all|\d{4})$")
+
+
+@app.get("/api/history")
+async def history(span: str = Query("1D", alias="range"), account: str = "all", conn=Depends(database)) -> dict:
+    """The recorded value over a range (1D, 1W, 1M, 1Y, All) for the whole portfolio ('all')
+    or one account (its last four digits), plus SPY scaled to the same start for the whole portfolio."""
+    if span not in RANGES:  # `span` in code: `range` is a Python built-in
+        raise HTTPException(400, f"range: one of {', '.join(RANGES)}")
+    if not ACCOUNT_KEY.match(account):
+        raise HTTPException(400, "account: 'all' or an account's last four digits")
+    return await build_history(
+        conn, schwab(), span, account, datetime.now(timezone.utc), live_previous_close(account)
+    )
+
+
+def live_previous_close(account: str) -> int | None:
+    """Yesterday's closing value, from the live feed (value now minus today's change)."""
+    latest = app.state.live.latest()
+    if not latest:
+        return None
+    if account == "all":
+        return latest["portfolio"]["previous_value_cents"]
+    for a in latest["accounts"]:
+        if a["last4"].lstrip("…") == account:
+            return a["total_value_cents"] - a["day_change_cents"]
+    return None
 
 
 @app.get("/api/orders")

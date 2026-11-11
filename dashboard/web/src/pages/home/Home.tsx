@@ -1,5 +1,6 @@
 import type { Portfolio, Quotes } from "../../account/types";
 import { useLive } from "../../live/useLive";
+import { ValueChart } from "../../components/valueChart/ValueChart";
 import { usePolling } from "../../usePolling";
 import { Holdings } from "./Holdings";
 import { TodaySummary } from "./TodaySummary";
@@ -24,7 +25,10 @@ export function Home() {
 
   return (
     <main className="page narrow home">
-      <TodaySummary portfolio={data} spy={spy} streaming={useLiveData && live.message!.streaming} />
+      <div>
+        <TodaySummary portfolio={data} spy={spy} streaming={useLiveData && live.message!.streaming} />
+        <ValueChart account="all" initialRange="1D" liveValueCents={data.total_value_cents} label="Portfolio value, with SPY for comparison" />
+      </div>
       <Holdings holdings={data.holdings} cashCents={data.cash_cents} />
       {!useLiveData && portfolio.error && <p className="quiet">Showing the last numbers: {portfolio.error.message}</p>}
     </main>

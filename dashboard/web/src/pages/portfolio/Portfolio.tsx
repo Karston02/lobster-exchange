@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Accounts, Orders } from "../../account/types";
+import { ValueChart } from "../../components/valueChart/ValueChart";
 import { useLive } from "../../live/useLive";
 import type { ServerStatus } from "../../shell/useServerStatus";
 import { usePolling } from "../../usePolling";
@@ -40,7 +41,16 @@ export function Portfolio() {
   return (
     <main className="page narrow portfolio">
       <AccountPicker accounts={list} selected={account.last4} onSelect={setPicked} />
-      <AccountSummary account={account} />
+      <div>
+        <AccountSummary account={account} />
+        <ValueChart
+          key={account.last4} // a fresh chart (and range) per account
+          account={account.last4.replace("…", "")}
+          initialRange="1M"
+          liveValueCents={account.total_value_cents}
+          label={`${account.name || account.last4} value over time`}
+        />
+      </div>
       <PositionsTable positions={account.positions} />
       <div>
         <OrdersFold orders={accountOrders} />

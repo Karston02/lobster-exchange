@@ -1,0 +1,58 @@
+/* The value chart on Home and Portfolio: line, range buttons, a quiet hover readout. */
+
+.value-chart {
+  position: relative;
+  margin-top: 20px;
+}
+
+.value-readout {
+  height: 18px;
+  font-size: 12px;
+}
+
+.value-now {
+  color: var(--text);
+}
+
+.value-canvas {
+  height: 240px;
+  margin-top: 6px;
+}
+
+.value-empty {
+  position: absolute;
+  inset: 24px 0 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.ranges {
+  display: flex;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.ranges button {
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ranges button:hover {
+  color: var(--text);
+}
+
+.ranges button[aria-pressed="true"] {
+  background: var(--active);
+  color: var(--text);
+}

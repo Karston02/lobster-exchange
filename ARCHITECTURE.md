@@ -268,6 +268,15 @@ _Lock:_ stored per drawing (a new `locked` column). A locked drawing can still b
 _Undo and redo:_ every save or delete records the drawing before and after. Undo writes back "before" (or deletes, if it didn't exist) and redo writes back "after", both through the same save path, so the server always matches. A drag is one change (saved on release). Text is saved once it has words, so a cancelled text box leaves no history. History is per symbol, for the current visit.
 _Migrating a live table:_ `0003` adds `text` and `locked` with defaults, so drawings saved before it still load; a test upgrades a 0002 database that already holds a drawing.
 
+### 29. Recording the portfolio's value
+
+Schwab has no "account value over time" API, so the server records it: every minute, a `HistoryRecorder` writes the live feed's latest totals (the whole portfolio as `all`, plus each account by its last four digits) to `value_history`. History therefore starts when recording started, and has gaps while the server is off (for now, while the laptop sleeps; the move to an always-on server in step 8 fixes that).
+_Only fresh numbers:_ the feed reloads accounts every minute and publishes right after, so a latest message older than three minutes means Schwab is unreachable, and nothing is written. A gap is more honest than a flat line of stale values.
+_Thinning by range:_ 1D shows every minute of the latest session (9:30 to 4:00 Eastern, rolling back over nights and weekends), 1W one point per 15 minutes, 1M per hour, 1Y and All per day. One SQL query picks the last value in each bucket (SQLite's `GROUP BY` with `MAX(time)` takes the other columns from that row).
+_Compared with SPY:_ for the whole portfolio, SPY's candles are scaled to start at the same value ("what if this money had been in SPY"). For 1D the start is yesterday's close, the last value recorded before the open (or the live previous close on the first day), so the chart agrees with "today's change"; for longer ranges it's the first value in the range. Single accounts show no SPY line, per the design's "minimal noise".
+_Size:_ about 1,440 rows per account per day, a few million rows a year; small for SQLite, and `WITHOUT ROWID` keeps each account's rows stored in time order.
+_The chart:_ a calm Lightweight Charts area line with no axes or grid, the dashed base line kept on screen through an `autoscaleInfoProvider`, and a hover readout. On 1D the live value extends the line to the current moment between recordings.
+
 ## Known limitations (to address later)
 
 - **Coinbase's public feed is "Level 2":** it shows total size at each price, not individual orders. So we can't know exactly where our order sits in a queue, and we'll have to _estimate_ queue position. This becomes a modeling problem in Phase 4.

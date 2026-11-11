@@ -94,6 +94,6 @@ def test_drawings_saved_before_the_new_columns_still_load(tmp_path):
         ("old", "AAPL", "hline", '[{"time": 1, "price": 5.0}]', "2026-11-10", "2026-11-10"),
     )
 
-    assert migrate(conn) == ["0003_drawing_text_and_lock.sql"]
+    assert "0003_drawing_text_and_lock.sql" in migrate(conn)  # plus any later migrations
     (drawing,) = list_drawings(conn, "AAPL")
     assert drawing.text == "" and drawing.locked is False
